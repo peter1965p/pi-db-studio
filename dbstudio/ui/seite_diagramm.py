@@ -492,6 +492,40 @@ class BeziehungsLinie(QGraphicsPathItem):
             pfad.lineTo(p + QPointF(0, dy))
 
 
+class _ZoomGriff(QLabel):
+    """Griff links an der Zoomleiste: ziehen verschiebt sie, Doppelklick setzt sie nach unten rechts zurück."""
+
+    def __init__(self, leiste: "ZoomLeiste"):
+        super().__init__("⋮⋮", leiste)
+        self.leiste = leiste
+        self.setCursor(Qt.OpenHandCursor)
+        self.setToolTip("Ziehen zum Verschieben · Doppelklick: zurück nach unten rechts")
+        self.setStyleSheet(f"color: {theme.AKTUELL['gedimmt']}; padding: 0 2px; letter-spacing: -3px;")
+        self._start = None
+
+    def mousePressEvent(self, e):
+        if e.button() == Qt.LeftButton:
+            self._start = e.globalPosition().toPoint() - self.leiste.pos()
+            self.setCursor(Qt.ClosedHandCursor)
+            e.accept()
+
+    def mouseMoveEvent(self, e):
+        if self._start is not None:
+            self.leiste.verschiebe_nach(e.globalPosition().toPoint() - self._start)
+            e.accept()
+
+    def mouseReleaseEvent(self, e):
+        if self._start is not None:
+            self._start = None
+            self.setCursor(Qt.OpenHandCursor)
+            self.leiste.position_merken()
+            e.accept()
+
+    def mouseDoubleClickEvent(self, e):
+        self.leiste.zuruecksetzen()
+        e.accept()
+
+
 class ZoomLeiste(QFrame):
     """„−“, Prozent (klickbar → Eingabe), „+“, „100 %“, „Anpassen“ – unten rechts über der Minikarte."""
 
@@ -504,6 +538,8 @@ class ZoomLeiste(QFrame):
         h = QHBoxLayout(self)
         h.setContentsMargins(6, 4, 6, 4)
         h.setSpacing(4)
+        self.griff = _ZoomGriff(self)
+        h.addWidget(self.griff)
         self.k_minus = QPushButton("−")
         self.k_prozent = QPushButton("100 %")
         self.k_plus = QPushButton("+")
@@ -533,6 +569,32 @@ class ZoomLeiste(QFrame):
 
     def aktualisieren(self):
         self.k_prozent.setText(f"{round(self.ansicht.zoom() * 100)} %")
+
+    # Verschieben: gemerkt wird der Abstand zur rechten unteren Ecke, damit sie beim Größerziehen mitwandert
+    abstand: tuple[int, int] | None = None
+
+    def _grenzen(self):
+        vp = self.ansicht.viewport()
+        return vp.width(), vp.height()
+
+    def verschiebe_nach(self, punkt):
+        vw, vh = self._grenzen()
+        x = max(0, min(vw - self.width(), punkt.x()))
+        y = max(0, min(vh - self.height(), punkt.y()))
+        self.move(x, y)
+        self.abstand = (vw - x - self.width(), vh - y - self.height())
+
+    def position_merken(self):
+        verbindungen.setze_einstellungen({"zoomleiste_abstand": list(self.abstand) if self.abstand else None})
+
+    def zuruecksetzen(self):
+        self.abstand = None
+        self.position_merken()
+        self.ansicht._platzieren()
+
+    def laden(self):
+        a = verbindungen.einstellungen().get("zoomleiste_abstand")
+        self.abstand = (int(a[0]), int(a[1])) if isinstance(a, list) and len(a) == 2 else None
 
 
 class Minikarte(QGraphicsView):
@@ -596,6 +658,7 @@ class Ansicht(QGraphicsView):
         self._leertaste = False
         self.minikarte = Minikarte(self)
         self.zoomleiste = ZoomLeiste(self)
+        self.zoomleiste.laden()
         self.horizontalScrollBar().valueChanged.connect(lambda _: self.minikarte.viewport().update())
         self.verticalScrollBar().valueChanged.connect(lambda _: self.minikarte.viewport().update())
 
@@ -608,7 +671,11 @@ class Ansicht(QGraphicsView):
         vw, vh = self.viewport().width(), self.viewport().height()
         m.move(vw - m.width() - 12, vh - m.height() - 12)
         z.adjustSize()
-        z.move(vw - z.width() - 12, vh - m.height() - z.height() - 18)
+        if z.abstand is None:
+            z.move(vw - z.width() - 12, vh - m.height() - z.height() - 18)
+        else:
+            z.move(max(0, min(vw - z.width(), vw - z.width() - z.abstand[0])),
+                   max(0, min(vh - z.height(), vh - z.height() - z.abstand[1])))
         m.viewport().update()
         leg = getattr(self, "legende", None)
         if leg is not None:

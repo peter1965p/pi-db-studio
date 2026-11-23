@@ -192,6 +192,32 @@ const Diagramm = (() => {
 
   // --- Maus --------------------------------------------------------------------------------------------------------
   let zug = null, speichernTimer = null;
+  // Zoomleiste per Griff verschieben; gemerkt wird der Abstand zur rechten unteren Ecke (pro Browser)
+  function zoomleisteVerschiebbar() {
+    const leiste = $("#zoomleiste"), griff = $("#z-griff"), rahmen = leiste.parentElement, SCHLUESSEL = "dbstudio-zoomleiste";
+    const setze = (r, b) => {
+      const maxR = Math.max(0, rahmen.clientWidth - leiste.offsetWidth), maxB = Math.max(0, rahmen.clientHeight - leiste.offsetHeight);
+      leiste.style.right = Math.max(0, Math.min(maxR, r)) + "px"; leiste.style.bottom = Math.max(0, Math.min(maxB, b)) + "px";
+    };
+    try { const a = JSON.parse(localStorage.getItem(SCHLUESSEL) || "null"); if (Array.isArray(a)) requestAnimationFrame(() => setze(a[0], a[1])); } catch (e) {}
+    let start = null;
+    griff.addEventListener("pointerdown", ev => {
+      ev.preventDefault(); ev.stopPropagation(); griff.setPointerCapture(ev.pointerId);
+      start = { x: ev.clientX, y: ev.clientY, r: parseFloat(getComputedStyle(leiste).right), b: parseFloat(getComputedStyle(leiste).bottom) };
+      leiste.classList.add("zieht");
+    });
+    griff.addEventListener("pointermove", ev => { if (start) setze(start.r - (ev.clientX - start.x), start.b - (ev.clientY - start.y)); });
+    griff.addEventListener("pointerup", () => {
+      if (!start) return; start = null; leiste.classList.remove("zieht");
+      try { localStorage.setItem(SCHLUESSEL, JSON.stringify([parseFloat(leiste.style.right), parseFloat(leiste.style.bottom)])); } catch (e) {}
+    });
+    griff.addEventListener("dblclick", ev => {
+      ev.stopPropagation(); leiste.style.right = ""; leiste.style.bottom = "";
+      try { localStorage.removeItem(SCHLUESSEL); } catch (e) {}
+    });
+    window.addEventListener("resize", () => { if (leiste.style.right) setze(parseFloat(leiste.style.right), parseFloat(leiste.style.bottom)); });
+  }
+
   function positionenSpeichern() {
     clearTimeout(speichernTimer);
     speichernTimer = setTimeout(() => P().api(`/api/v/${P().zustand.vid}/erm/positionen`, { body: { schema: g.schema,
@@ -239,6 +265,7 @@ const Diagramm = (() => {
     $("#z-minus").onclick = () => zoomUm(1 / 1.2, ...mitte());
     $("#z-100").onclick = () => { const b = grenzen(); g.zoom = 1; g.tx = 20 - b.x0; g.ty = 20 - b.y0; transform(); };
     $("#z-anpassen").onclick = () => anpassen(false);
+    zoomleisteVerschiebbar();
     $("#z-wert").onclick = () => { const v = prompt("Zoom in %", Math.round(g.zoom * 100)); if (v && +v > 0) zoomUm((+v / 100) / g.zoom, ...mitte()); };
     document.addEventListener("keydown", ev => {
       if (!document.querySelector("#v-diagramm.aktiv") || /input|textarea|select/i.test(ev.target.tagName)) return;

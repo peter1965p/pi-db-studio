@@ -184,6 +184,9 @@ li.CodeMirror-hint-active { background: var(--aktiv); color: var(--akzent); }
 .legende i { display: inline-block; width: 22px; height: 0; border-top: 2px solid; }
 .zoomleiste { position: absolute; right: 10px; bottom: 10px; display: flex; gap: 4px; align-items: center; background: var(--karte); border: 1px solid var(--rand); border-radius: 10px; padding: 4px; }
 .zoomleiste span { min-width: 46px; text-align: center; cursor: pointer; }
+.zoomleiste .z-griff { min-width: 0; padding: 2px 3px; color: var(--gedimmt); letter-spacing: -3px; cursor: grab; touch-action: none; user-select: none; }
+.zoomleiste.zieht, .zoomleiste.zieht .z-griff { cursor: grabbing; }
+.zoomleiste.zieht { box-shadow: 0 6px 20px rgba(0,0,0,.35); border-color: var(--blau); }
 #erm-tooltip { position: absolute; pointer-events: none; background: var(--karte); border: 1px solid var(--rand); border-radius: 8px; padding: 6px 10px; font-size: 12px; max-width: 360px; z-index: 5; box-shadow: 0 6px 20px rgba(0,0,0,.35); }
 #erm-tooltip b { color: var(--akzent); }
 

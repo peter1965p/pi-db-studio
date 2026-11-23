@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.3 – 2026-11-23
+
+- **ER-Diagramm (Desktop und Web):** Zoomleiste per Griff links (⋮⋮) frei verschiebbar, bleibt im Sichtbereich,
+  Position wird gemerkt (Desktop: Einstellungen, Web: im Browser) und wandert beim Größerziehen mit;
+  Doppelklick auf den Griff setzt sie nach unten rechts zurück. Die Minikarte bleibt an ihrem Platz.
+
 ## 0.3.2 – 2026-11-23
 
 - **KI-Anbieter „Claude (Claude Code auf dem PC)“ für die Web-Version:** KI-Brücke `python -m dbstudio.claude_bruecke`

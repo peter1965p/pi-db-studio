@@ -94,3 +94,22 @@ def test_alte_positionen_werden_ignoriert(tmp_path):
     assert erm.positionen_laden("v1", "s") == {}
     erm.positionen_speichern("v1", "s", {"firmen": (1.0, 2.0)})
     assert erm.positionen_laden("v1", "s") == {"firmen": (1.0, 2.0)}
+
+
+def test_zoomleiste_ziehen_merken_zuruecksetzen(qtbot):
+    from dbstudio import verbindungen
+    a = _ansicht(qtbot)
+    z, m = a.zoomleiste, a.minikarte
+    start, mini = z.pos(), m.pos()
+    z.verschiebe_nach(QPoint(40, 30))
+    z.position_merken()
+    assert z.pos() == QPoint(40, 30) and m.pos() == mini
+    z.verschiebe_nach(QPoint(-500, 99999))  # bleibt im Sichtbereich
+    assert z.x() == 0 and z.y() == a.viewport().height() - z.height()
+    z.verschiebe_nach(QPoint(40, 30))
+    z.position_merken()
+    b = _ansicht(qtbot)  # neue Ansicht liest die gemerkte Position
+    b._platzieren()
+    assert b.zoomleiste.pos() == QPoint(40, 30)
+    z.griff.mouseDoubleClickEvent(type("E", (), {"accept": lambda self: None})())
+    assert z.pos() == start and verbindungen.einstellungen()["zoomleiste_abstand"] is None
