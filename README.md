@@ -32,6 +32,17 @@ python3 -m venv venv && venv/bin/pip install -r requirements.txt
 venv/bin/python -m dbstudio
 ```
 
+## Web-Oberfläche (0.3.0)
+
+```
+venv/bin/pip install -r requirements-web.txt
+DBSTUDIO_SCHLUESSEL=$(venv/bin/python -m dbstudio.web schluessel) DBSTUDIO_WEB_DATEN=/tmp/dbweb \
+  sh -c 'echo "ein-langes-passwort" | venv/bin/python -m dbstudio.web benutzer admin; DBSTUDIO_PORT=8443 venv/bin/python -m dbstudio.web'
+```
+
+Betrieb im Heimnetz: `deploy/deploy-web.sh` → https://192.168.178.215 (Container 104). Admin-Passwort liegt im
+Schlüsselbund (Dienst `db-studio`, Eintrag `web:admin@192.168.178.215`).
+
 ## Tests
 
 ```bash

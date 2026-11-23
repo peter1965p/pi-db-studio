@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.3.0 – 2026-11-23
+
+- **Web-Oberfläche** (`python -m dbstudio.web`, Paket `dbstudio/web/`): FastAPI + statisches Frontend ohne Build,
+  im Päffgen-IT-Look (dunkel/hell, Orange/Blau, Tux-Favicon). Nutzt den Kern der Desktop-App unverändert
+  (Treiber, Metadaten, Schutzregeln, Import/Export, KI, ER-Modell/DDL, EF-Core) – keine doppelte Logik.
+- **Anmeldung:** eigener Benutzer (argon2), serverseitige Sitzung im Cookie (httponly, secure, SameSite=strict,
+  12 h gleitend), Rate-Limit (8 Versuche / 5 min je IP), schreibende Anfragen nur mit Kennungs-Kopfzeile,
+  strenge Content-Security-Policy, keine API-Doku nach außen.
+- **Verbindungen:** Passwörter und KI-Schlüssel serverseitig mit Fernet verschlüsselt (Schlüssel nur in der
+  600-Geheimnisdatei des Dienstes), gehen nie an den Browser zurück; Testen, Farbmarkierung, Schreibschutz.
+- **Datenbank:** Objektbaum mit Schema-Auswahl und Suche, Datenraster mit Seiten, Sortieren, Filter (nur Bedingung),
+  Bearbeiten per Doppelklick, neue/gelöschte Zeilen – „Übernehmen“ schreibt alles in einer Transaktion.
+- **SQL-Editor:** CodeMirror (lokal ausgeliefert) mit Highlighting und Autovervollständigung für Tabellen/Spalten,
+  Tabs, Strg+Enter, mehrere Anweisungen, EXPLAIN, Abbrechen, Nachladen in 500er-Schritten, Export des Ergebnisses.
+  Rückfrage bei UPDATE/DELETE ohne WHERE, DROP, TRUNCATE und auf Produktiv-Verbindungen; Schreibschutz sperrt.
+- **KI-Leiste:** SQL schreiben, erklären, optimieren (mit EXPLAIN), Fehler erklären; nur das Schema geht an die KI,
+  KI-SQL landet in einem neuen Tab. Anbieter: Claude-API (Schlüssel verschlüsselt), Ollama (Adresse einstellbar).
+- **ER-Diagramm im Browser (SVG):** Mausrad-Zoom um den Zeiger, Ziehen, Karten verschieben (Raster, Positionen
+  gespeichert), rechtwinklige Linien mit Plaketten 1 / n / 0..1, Farben je Art, Legende, Hervorheben, Tooltip in
+  Worten, Ansicht alle Spalten/Schlüssel/Namen, **EF-Core-Stil** (Klassen, C#-Typen, Navigationen, 1 ↔ *).
+  Tabelle/Spalte anlegen und **Beziehung per Ziehen** mit DDL-Vorschau, Beziehungen vorschlagen,
+  Export SVG/PNG und DbContext (C#).
+- **Import/Export:** CSV, JSON, JSON Lines, Excel (Vorschau, neue Tabelle) und CSV/JSON/Excel/SQL-Download.
+- **Betrieb:** `deploy/deploy-web.sh` spielt in Container 104 (192.168.178.215) ein: eigener Systembenutzer,
+  systemd-Dienst mit Härtung, HTTPS auf 443 (selbstsigniert, EC), nftables im Container (443/22 nur aus
+  192.168.178.0/24), Admin-Passwort nur im Schlüsselbund des PCs. `requirements-web.txt` ohne PySide6.
+- Tests: `tests/test_web.py` (API gegen SQLite, DuckDB, PostgreSQL); Screenshots `docs/web_screenshots.py`.
+
 ## 0.2.2 – 2026-11-23
 
 - **Zoom wie in gängigen Werkzeugen:** Mausrad zoomt direkt um den Mauszeiger (10–400 %), Shift+Mausrad scrollt

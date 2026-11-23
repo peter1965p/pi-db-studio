@@ -1,0 +1,28 @@
+[Unit]
+Description=Pi DB Studio – Web-Oberfläche
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=dbstudio
+Group=dbstudio
+WorkingDirectory=/opt/dbstudio-web/app
+EnvironmentFile=/etc/dbstudio-web.env
+Environment=DBSTUDIO_WEB_DATEN=/var/lib/dbstudio-web
+Environment=DBSTUDIO_PORT=443
+Environment=DBSTUDIO_ZERTIFIKAT=/etc/dbstudio-web/zert.pem
+Environment=DBSTUDIO_ZERT_SCHLUESSEL=/etc/dbstudio-web/schluessel.pem
+ExecStart=/opt/dbstudio-web/venv/bin/python -m dbstudio.web
+Restart=on-failure
+RestartSec=5
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/var/lib/dbstudio-web
+MemoryMax=700M
+
+[Install]
+WantedBy=multi-user.target

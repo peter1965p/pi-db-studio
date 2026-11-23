@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pi DB Studio</title>
+<link rel="icon" type="image/png" href="/favicon.png">
+<link rel="stylesheet" href="/static/vendor/codemirror/codemirror.min.css">
+<link rel="stylesheet" href="/static/vendor/codemirror/show-hint.min.css">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<!-- Anmeldung -->
+<section id="anmeldung" class="versteckt">
+  <form id="f-anmelden">
+    <div class="marke"><img src="/favicon.png" alt=""><div><h1>Pi DB Studio</h1><span class="gedimmt">Päffgen IT · Daten mit KI</span></div></div>
+    <label class="feld">Benutzer<input name="benutzer" autocomplete="username" required></label>
+    <label class="feld">Passwort<input name="passwort" type="password" autocomplete="current-password" required></label>
+    <div id="anmelde-fehler" class="meldung fehler versteckt"></div>
+    <button class="knopf primaer" type="submit">Anmelden</button>
+  </form>
+</section>
+
+<div id="app" class="versteckt">
+  <aside id="sidebar">
+    <div class="marke"><img src="/favicon.png" alt=""><div><b>Pi DB Studio</b><small>Päffgen IT · Daten mit KI</small></div></div>
+    <div class="nav-sektion">ARBEIT</div>
+    <button class="nav-eintrag aktiv" data-ansicht="verbindungen">Verbindungen</button>
+    <button class="nav-eintrag" data-ansicht="datenbank" data-braucht="1">Datenbank</button>
+    <button class="nav-eintrag" data-ansicht="diagramm" data-braucht="1">Diagramm</button>
+    <button class="nav-eintrag" data-ansicht="editor" data-braucht="1">SQL-Editor</button>
+    <button class="nav-eintrag" data-ansicht="austausch" data-braucht="1">Import &amp; Export</button>
+    <div class="nav-sektion">SYSTEM</div>
+    <button class="nav-eintrag" data-ansicht="einstellungen">Einstellungen</button>
+    <div id="verbindungskarte" class="versteckt"><b id="vk-name"></b><span class="gedimmt" id="vk-info"></span>
+      <div style="margin-top:6px"><button class="knopf klein" id="vk-trennen">Trennen</button></div></div>
+    <div class="fuss">
+      <button id="thema">☀ Helles Design</button>
+      <button id="abmelden">⎋ Abmelden</button>
+      <span class="gedimmt" style="padding:4px 14px" id="version"></span>
+    </div>
+  </aside>
+
+  <main>
+    <div class="kopf"><h1 id="titel">Verbindungen</h1><div class="rechts"><span id="pill" class="pill versteckt"></span></div></div>
+    <div class="unter" id="untertitel">Gespeicherte Datenbanken. Passwörter bleiben verschlüsselt auf dem Server.</div>
+    <div id="hinweiszeile" class="meldung versteckt"><span></span><button title="Ausblenden">×</button></div>
+
+    <!-- Verbindungen -->
+    <section class="ansicht aktiv" id="v-verbindungen">
+      <div class="leiste"><button class="knopf primaer" id="neu-verbindung">＋ Neue Verbindung</button></div>
+      <div class="raster" id="verbindungsliste"></div>
+    </section>
+
+    <!-- Datenbank -->
+    <section class="ansicht" id="v-datenbank">
+      <div class="geteilt">
+        <div class="baum">
+          <select id="schema-wahl"></select>
+          <input id="baum-suche" placeholder="Suchen …">
+          <div class="karte liste" id="baum"></div>
+        </div>
+        <div class="inhalt">
+          <div class="leiste">
+            <b id="tabellen-titel" class="gedimmt">Tabelle wählen</b>
+            <input id="filter" placeholder="Filter, z. B. status = 'neu'" style="width:280px">
+            <button class="knopf klein" id="filter-los">Filtern</button>
+            <span class="trenner"></span>
+            <button class="knopf klein" id="zeile-neu" disabled>＋ Zeile</button>
+            <button class="knopf klein" id="zeile-weg" disabled>Zeile löschen</button>
+            <button class="knopf klein primaer" id="uebernehmen" disabled>Übernehmen</button>
+            <button class="knopf klein" id="verwerfen" disabled>Verwerfen</button>
+            <div class="rechts"><button class="knopf klein" id="tab-export">⇩ Export</button></div>
+          </div>
+          <div class="tabelle-wrap" id="raster-wrap"><table class="daten" id="raster"></table></div>
+          <div class="leiste">
+            <div class="seiten" id="seiten"></div>
+            <div class="rechts gedimmt"><select id="pro-seite"><option>50</option><option selected>100</option><option>250</option><option>500</option></select> pro Seite</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Diagramm -->
+    <section class="ansicht" id="v-diagramm">
+      <div class="leiste">
+        <select id="erm-schema"></select>
+        <button class="knopf klein" id="erm-neu-laden" title="Neu laden">⟳</button>
+        <span class="trenner"></span>
+        <select id="erm-ansicht"><option value="alle">Alle Spalten</option><option value="schluessel">Nur Schlüssel</option><option value="namen">Nur Tabellennamen</option></select>
+        <select id="erm-stil"><option value="db">Datenbank-Stil</option><option value="ef">EF-Core-Stil</option></select>
+        <button class="knopf klein" id="erm-anordnen">▦ Anordnen</button>
+        <span class="trenner"></span>
+        <button class="knopf klein primaer" id="erm-tabelle">＋ Tabelle</button>
+        <button class="knopf klein" id="erm-spalte">＋ Spalte</button>
+        <button class="knopf klein blau" id="erm-vorschlaege">✦ Beziehungen vorschlagen</button>
+        <span class="trenner"></span>
+        <select id="erm-export"><option value="">⇩ Export …</option><option value="svg">SVG</option><option value="png">PNG</option><option value="cs">DbContext (C#)</option></select>
+        <div class="rechts gedimmt" id="erm-zahlen"></div>
+      </div>
+      <div class="diagramm-rahmen" id="erm-rahmen">
+        <svg id="erm-svg" xmlns="http://www.w3.org/2000/svg"><g id="erm-welt"></g></svg>
+        <div class="legende" id="erm-legende">
+          <div class="kopfzeile">Legende ▾</div>
+          <div class="inhalt-l">
+            <div class="z"><i style="border-color:var(--akzent)"></i>1:1 – eins zu eins</div>
+            <div class="z"><i style="border-color:var(--blau)"></i>1:n – eins zu vielen</div>
+            <div class="z"><i style="border-color:var(--neon);border-top-style:dashed"></i>n:m – über Zwischentabelle</div>
+            <div class="z"><span class="mono">0..1</span> optional (FK darf leer sein)</div>
+          </div>
+        </div>
+        <div class="zoomleiste">
+          <button class="knopf klein" id="z-minus">−</button><span id="z-wert">100 %</span><button class="knopf klein" id="z-plus">+</button>
+          <button class="knopf klein" id="z-100">100 %</button><button class="knopf klein" id="z-anpassen">Anpassen</button>
+        </div>
+        <div id="erm-tooltip" class="versteckt"></div>
+      </div>
+    </section>
+
+    <!-- SQL-Editor -->
+    <section class="ansicht" id="v-editor">
+      <div class="editor-rahmen">
+        <div class="editor-spalte">
+          <div class="tabs" id="tabs"><button class="knopf klein" id="tab-neu" title="Neuer Tab">＋</button></div>
+          <div class="leiste">
+            <button class="knopf primaer" id="sql-los">▶ Ausführen <span class="gedimmt">Strg+Enter</span></button>
+            <button class="knopf" id="sql-explain">EXPLAIN</button>
+            <button class="knopf gefahr" id="sql-stopp" disabled>■ Abbrechen</button>
+            <span class="trenner"></span>
+            <label class="gedimmt">Schema <select id="sql-schema"></select></label>
+            <div class="rechts"><button class="knopf klein" id="sql-export">⇩ Ergebnis exportieren</button></div>
+          </div>
+          <textarea id="sql-text"></textarea>
+          <div class="status" id="sql-status"></div>
+          <div class="tabelle-wrap"><table class="daten" id="sql-ergebnis"></table></div>
+          <div class="leiste"><button class="knopf klein versteckt" id="sql-mehr">Weitere 500 laden</button></div>
+        </div>
+        <div class="ki-leiste karte">
+          <b>✦ KI-Assistent</b>
+          <span class="gedimmt" style="font-size:12px">An die KI geht nur das Schema. KI-SQL wird nie selbst ausgeführt.</span>
+          <textarea id="ki-text" placeholder="Was willst du wissen? z. B. „Firmen mit den meisten Entwürfen“"></textarea>
+          <div class="leiste">
+            <button class="knopf primaer klein" data-ki="sql">SQL schreiben</button>
+            <button class="knopf klein" data-ki="erklaeren">Erklären</button>
+            <button class="knopf klein" data-ki="optimieren">Optimieren</button>
+            <button class="knopf klein" data-ki="fehler">Fehler erklären</button>
+          </div>
+          <label class="schalter"><input type="checkbox" id="ki-beispiele"> Beispielzeilen mitsenden</label>
+          <div class="ki-antwort" id="ki-antwort"></div>
+          <button class="knopf klein versteckt" id="ki-uebernehmen">SQL in neuen Tab übernehmen</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Import & Export -->
+    <section class="ansicht" id="v-austausch">
+      <div class="raster" style="grid-template-columns:repeat(auto-fill,minmax(380px,1fr))">
+        <form class="karte" id="f-import" style="display:flex;flex-direction:column;gap:10px">
+          <b>Import (CSV, JSON, JSON Lines, Excel)</b>
+          <input type="file" name="datei" accept=".csv,.json,.jsonl,.xlsx" required>
+          <label class="feld">Zieltabelle<input name="tabelle" required></label>
+          <label class="schalter"><input type="checkbox" name="neu"> Tabelle neu anlegen (Typen werden geschätzt)</label>
+          <div class="leiste"><button class="knopf" type="button" id="import-vorschau">Vorschau</button><button class="knopf primaer" type="submit">Importieren</button></div>
+          <div class="tabelle-wrap" style="max-height:260px"><table class="daten" id="import-tabelle"></table></div>
+        </form>
+        <form class="karte" id="f-export" style="display:flex;flex-direction:column;gap:10px">
+          <b>Export</b>
+          <label class="feld">Tabelle<select name="tabelle" id="export-tabelle"></select></label>
+          <label class="feld">Format<select name="format"><option value="csv">CSV</option><option value="json">JSON</option><option value="xlsx">Excel</option><option value="sql">SQL-INSERT</option></select></label>
+          <div class="leiste"><button class="knopf primaer" type="submit">⇩ Herunterladen</button></div>
+        </form>
+      </div>
+    </section>
+
+    <!-- Einstellungen -->
+    <section class="ansicht" id="v-einstellungen">
+      <form class="karte" id="f-einstellungen" style="max-width:560px;display:flex;flex-direction:column;gap:10px">
+        <b>KI</b>
+        <label class="feld">Anbieter<select name="ki_anbieter" id="ki-anbieter"></select></label>
+        <label class="feld">Modell (leer = Standard)<input name="ki_modell"></label>
+        <label class="feld">Claude-API-Schlüssel <span class="gedimmt" id="api-status"></span><input name="api_schluessel" type="password" autocomplete="off" placeholder="unverändert lassen"></label>
+        <label class="feld">Ollama-Adresse<input name="ollama_url"></label>
+        <div class="leiste"><button class="knopf primaer" type="submit">Speichern</button><button class="knopf gefahr klein" type="button" id="api-loeschen">API-Schlüssel löschen</button></div>
+      </form>
+    </section>
+  </main>
+</div>
+
+<!-- Dialoge -->
+<dialog id="d-verbindung"><form method="dialog" id="f-verbindung">
+  <h2>Verbindung</h2>
+  <div class="gitter">
+    <label class="feld">Name<input name="name" required></label>
+    <label class="feld">Art<select name="art" id="v-art"></select></label>
+    <label class="feld nur-server">Host<input name="host"></label>
+    <label class="feld nur-server">Port<input name="port"></label>
+    <label class="feld nur-server">Datenbank<input name="datenbank"></label>
+    <label class="feld nur-server">Benutzer<input name="benutzer" autocomplete="off"></label>
+    <label class="feld nur-server">Passwort<input name="passwort" type="password" autocomplete="new-password" placeholder="unverändert lassen"></label>
+    <label class="feld nur-server">SSL<select name="sslmode"><option>prefer</option><option>require</option><option>verify-full</option><option>disable</option></select></label>
+    <label class="feld nur-datei" style="grid-column:span 2">Datei auf dem Server<input name="datei" placeholder="/var/lib/dbstudio-web/daten/beispiel.db"></label>
+    <label class="feld">Farbe<select name="farbe"><option value="">keine</option><option value="#e05252">rot (produktiv)</option><option value="#f5a623">orange (Test)</option><option value="#5aa0e6">blau (Entwicklung)</option><option value="#3ecf8e">grün (lokal)</option></select></label>
+    <label class="schalter" style="align-self:end"><input type="checkbox" name="schreibschutz"> Schreibschutz</label>
+  </div>
+  <div id="v-test-meldung" class="meldung versteckt"></div>
+  <div class="unten"><button class="knopf gefahr" value="loeschen" id="v-loeschen" type="button">Löschen</button><span style="flex:1"></span>
+    <button class="knopf" type="button" id="v-test">Testen</button><button class="knopf" value="abbruch" formnovalidate>Abbrechen</button><button class="knopf primaer" value="ok">Speichern</button></div>
+</form></dialog>
+
+<dialog id="d-rueckfrage"><div class="koerper">
+  <h2>Wirklich ausführen?</h2><div id="rf-text"></div>
+  <div class="unten"><button class="knopf" id="rf-nein">Abbrechen</button><button class="knopf gefahr" id="rf-ja">Trotzdem ausführen</button></div>
+</div></dialog>
+
+<dialog id="d-ddl"><div class="koerper">
+  <h2 id="ddl-titel">SQL-Vorschau</h2>
+  <div id="ddl-form"></div>
+  <div id="ddl-hinweise" class="meldung versteckt"></div>
+  <textarea class="ddl" id="ddl-text" spellcheck="false"></textarea>
+  <div class="unten"><button class="knopf" id="ddl-editor">In SQL-Editor</button><span style="flex:1"></span><button class="knopf" id="ddl-abbruch">Abbrechen</button><button class="knopf primaer" id="ddl-vorschau">Vorschau erzeugen</button><button class="knopf primaer" id="ddl-los" disabled>Ausführen</button></div>
+</div></dialog>
+
+<div id="toast"></div>
+
+<script src="/static/vendor/codemirror/codemirror.min.js"></script>
+<script src="/static/vendor/codemirror/sql.min.js"></script>
+<script src="/static/vendor/codemirror/show-hint.min.js"></script>
+<script src="/static/vendor/codemirror/sql-hint.min.js"></script>
+<script src="/static/vendor/codemirror/matchbrackets.min.js"></script>
+<script src="/static/vendor/codemirror/active-line.min.js"></script>
+<script src="/static/diagramm.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>
