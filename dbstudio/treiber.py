@@ -352,18 +352,21 @@ class SQLite(Treiber):
         return self.zitiere(tabelle) if schema in (None, "", "main") else super().voll(schema, tabelle)
 
     def schemas(self):
-        return [r[1] for r in self.conn.execute("PRAGMA database_list")]
+        with self.sperre:
+            return [r[1] for r in self.conn.execute("PRAGMA database_list").fetchall()]
 
     def objekte(self, schema):
         s = self.zitiere(schema)
-        rows = self.conn.execute(f"SELECT type, name FROM {s}.sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY name").fetchall()
+        with self.sperre:  # eine Verbindung, mehrere Hintergrund-Threads: Metadaten nie verschränkt lesen
+            rows = self.conn.execute(f"SELECT type, name FROM {s}.sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY name").fetchall()
         o = {"tabellen": [], "views": [], "indizes": [], "funktionen": []}
         for typ, name in rows:
             {"table": o["tabellen"], "view": o["views"], "index": o["indizes"]}.get(typ, []).append(name)
         return o
 
     def spalten(self, schema, tabelle):
-        rows = self.conn.execute(f"PRAGMA {self.zitiere(schema or 'main')}.table_info({self.zitiere(tabelle)})").fetchall()
+        with self.sperre:
+            rows = self.conn.execute(f"PRAGMA {self.zitiere(schema or 'main')}.table_info({self.zitiere(tabelle)})").fetchall()
         return [Spalte(r[1], r[2] or "", not r[3], bool(r[5])) for r in rows]
 
     def standard_schema(self):

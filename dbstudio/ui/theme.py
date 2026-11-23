@@ -19,6 +19,7 @@ HELL = {
 }
 AKTUELL = DUNKEL
 BILDER = Path(__file__).parent / "bilder"
+ICON = Path(__file__).parent.parent / "icon.png"
 PFEIL_HOCH = (BILDER / "pfeil_hoch.svg").as_posix()
 PFEIL_RUNTER = (BILDER / "pfeil_runter.svg").as_posix()
 
@@ -90,6 +91,7 @@ def stylesheet(t: dict) -> str:
     QTabBar::tab {{ background: transparent; border: none; padding: 7px 14px; color: {t['gedimmt']}; }}
     QTabBar::tab:selected {{ color: {t['akzent']}; border-bottom: 2px solid {t['akzent']}; }}
     QTabBar::tab:hover {{ color: {t['text']}; }}
+    QGraphicsView {{ background: {t['feld']}; border: 1px solid {t['rand']}; border-radius: 10px; }}
     QSplitter::handle {{ background: {t['bg']}; }}
     QScrollBar:vertical {{ background: transparent; width: 9px; }}
     QScrollBar::handle:vertical {{ background: {t['rand']}; border-radius: 4px; min-height: 24px; }}

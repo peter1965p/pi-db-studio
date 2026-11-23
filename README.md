@@ -4,6 +4,7 @@ Schlankes Datenbank-Werkzeug mit KI-Assistent – im Look von Job Agent und Päf
 (dunkel/hell, Orange/Blau). Desktop in Python/PySide6, eine Web-Oberfläche folgt später.
 
 ![SQL-Editor](docs/sql-editor.png)
+![Diagramm](docs/diagramm.png)
 
 ## Was drin ist (0.1.0)
 
@@ -14,6 +15,7 @@ Schlankes Datenbank-Werkzeug mit KI-Assistent – im Look von Job Agent und Päf
 | Objektbaum | Schemas → Tabellen, Views, Indizes, Funktionen; Suche; Kontextmenü (Öffnen, SELECT im Editor, kopieren) |
 | Datenraster | Seiten, Sortieren per Spaltenkopf, Filter (WHERE), Zellen bearbeiten, Zeilen hinzufügen/löschen – gesammelt, dann **Übernehmen** in einer Transaktion oder **Verwerfen**. Nur mit Primärschlüssel und ohne Schreibschutz |
 | SQL-Editor | Tabs, Hervorhebung, Autovervollständigung (Schlüsselwörter, Tabellen, `tabelle.` → Spalten), Strg+Enter (Markierung oder alles), mehrere Anweisungen, EXPLAIN, Abbrechen, Verlauf, Ergebnis nachladen statt alles auf einmal. Läuft im Hintergrund – die Oberfläche friert nicht ein |
+| Diagramm | ER-Diagramm mit Krähenfuß-Notation (1:n, 1:1, n:m), Zoom, automatische Anordnung; Tabellen, Spalten und Beziehungen per Ziehen anlegen – immer erst als DDL-Vorschau im passenden Dialekt, dann in einer Transaktion; „Beziehungen vorschlagen“ (Namensregel + KI, nur Schema); Export PNG/SVG |
 | Import/Export | Export CSV, JSON, Excel, SQL-INSERT (Tabelle oder Ergebnis). Import aus CSV/JSON/JSON Lines/Excel mit Vorschau, Spaltenzuordnung, neuer Tabelle (Typen aus den Daten) – alles oder nichts |
 | Tabelle kopieren | Zwischen beliebigen Verbindungen, Typen werden abgebildet (z. B. SQLite → PostgreSQL), Stapel in einer Transaktion |
 | KI-Assistent | Text → SQL, Abfrage erklären, optimieren (mit EXPLAIN-Plan), Fehler erklären. Anbieter: Claude-API (Schlüssel im Schlüsselbund, Standard `claude-opus-5-5`), Claude Code (Abo) oder lokal per Ollama |

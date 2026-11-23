@@ -87,7 +87,7 @@ class SqlEditor(QPlainTextEdit):
 
     def setze_namen(self, tabellen: list[str], spalten: dict[str, list[str]]):
         self.tabellen, self.spalten_je = tabellen, spalten
-        alle = {w.upper() for w in SCHLUESSELWOERTER} | set(tabellen) | {s for l in spalten.values() for s in l}
+        alle = {w.upper() for w in SCHLUESSELWOERTER} | set(tabellen) | {s for l in spalten.values() for s in l if s}
         self._liste.setStringList(sorted(alle, key=str.lower))
 
     def sql_zum_ausfuehren(self) -> str:

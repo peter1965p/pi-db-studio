@@ -74,6 +74,11 @@ def _aufgabe(art: str, kontext: str, **w) -> str:
     if art == "fehler":
         return (f"{kontext}\n\nDiese Abfrage schlug fehl:\n```sql\n{w['sql']}\n```\nFehlermeldung: {w['fehler']}\n"
                 "Erkläre kurz die Ursache und liefere die korrigierte Abfrage.")
+    if art == "beziehungen":
+        return (f"{kontext}\n\nVorhandene Fremdschlüssel:\n{w.get('fks') or '(keine)'}\n\n"
+                "Welche Fremdschlüssel fehlen vermutlich (anhand von Spaltennamen und Typen)? Nenne je Vorschlag kurz den "
+                "Grund und liefere alle als EINEN ```sql```-Block mit ALTER TABLE … ADD CONSTRAINT … FOREIGN KEY "
+                "(im Dialekt der Datenbank). Schlage nur Beziehungen zwischen vorhandenen Spalten vor.")
     raise ValueError(art)
 
 

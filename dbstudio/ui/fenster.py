@@ -11,12 +11,13 @@ from .. import __version__, treiber, verbindungen
 from . import arbeiter, theme
 from .bausteine import label, meldung, rueckfrage
 from .seite_austausch import AustauschSeite
+from .seite_diagramm import DiagrammSeite
 from .seite_editor import EditorSeite
 from .seite_einstellungen import EinstellungenSeite
 from .seite_explorer import ExplorerSeite
 from .seite_verbindungen import VerbindungenSeite
 
-NAV = [("ARBEIT", None), ("Verbindungen", "verbindungen"), ("Datenbank", "explorer"), ("SQL-Editor", "editor"),
+NAV = [("ARBEIT", None), ("Verbindungen", "verbindungen"), ("Datenbank", "explorer"), ("Diagramm", "diagramm"), ("SQL-Editor", "editor"),
        ("Import && Kopieren", "austausch"), ("SYSTEM", None), ("Einstellungen", "einstellungen")]
 
 
@@ -24,7 +25,7 @@ class Hauptfenster(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Pi DB Studio")
-        self.setWindowIcon(QIcon(str(theme.BILDER / "logo-128.png")))
+        self.setWindowIcon(QIcon(str(theme.ICON)))
         self.resize(1440, 880)
         self.t: treiber.Treiber | None = None
         self.cfg: dict = {}
@@ -46,8 +47,9 @@ class Hauptfenster(QMainWindow):
         self.editor = EditorSeite(self)
         self.explorer = ExplorerSeite(self)
         self.austausch = AustauschSeite(self)
+        self.diagramm = DiagrammSeite(self)
         self.einstellungen = EinstellungenSeite(self)
-        self.seiten = {"verbindungen": self.verbindungen, "explorer": self.explorer, "editor": self.editor,
+        self.seiten = {"verbindungen": self.verbindungen, "explorer": self.explorer, "diagramm": self.diagramm, "editor": self.editor,
                        "austausch": self.austausch, "einstellungen": self.einstellungen}
         for s in self.seiten.values():
             self.stapel.addWidget(s)
@@ -164,10 +166,11 @@ class Hauptfenster(QMainWindow):
         self.aktiv_info.setText(f"{treiber.ARTEN.get(cfg['art'])}\n{version}" + ("\nSchreibschutz an" if t.schreibschutz else ""))
         self.k_trennen.show()
         self.verbindungen.markiere(cfg["id"])
-        for s in (self.explorer, self.editor, self.austausch):
+        for s in (self.explorer, self.diagramm, self.editor, self.austausch):
             s.kopf.status(self.status_text(), "pillWarn" if t.schreibschutz else "pill")
         self.explorer.neu_laden()
         self.austausch.verbindung_gewechselt()
+        self.diagramm.verbindung_gewechselt()
         self.zeige(self.explorer)
 
     def _nicht_verbunden(self, fehler):
@@ -185,7 +188,8 @@ class Hauptfenster(QMainWindow):
         self.k_trennen.hide()
         self.verbindungen.markiere("")
         self.explorer.baum.clear()
-        for s in (self.explorer, self.editor, self.austausch):
+        self.diagramm.verbindung_gewechselt()
+        for s in (self.explorer, self.diagramm, self.editor, self.austausch):
             s.kopf.status("")
 
     def closeEvent(self, e):
