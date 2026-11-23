@@ -237,17 +237,82 @@ def ebenen(m: Modell) -> dict[str, int]:
     return ebene
 
 
-def auto_layout(m: Modell, breite: float = 260, abstand_x: float = 110, abstand_y: float = 40,
+def auto_layout(m: Modell, breite: float = 260, abstand_x: float = 120, abstand_y: float = 40,
                 hoehe=lambda t: 40 + 22 * len(t.spalten)) -> dict[str, tuple[float, float]]:
+    """Ruhiges Layout: je zusammenhängender Gruppe steht die meistreferenzierte Tabelle in der Mitte, abhängige
+    Tabellen in Spalten links und rechts daneben (Abstand nach Beziehungs-Entfernung). Tabellen ohne Beziehung
+    stehen kompakt in einem Raster rechts daneben. Spaltenweise gestapelt -> keine Überlappungen."""
+    from collections import deque
+    from math import ceil, sqrt
+
+    nachbarn = {n: set() for n in m.tabellen}
+    rein = {n: 0 for n in m.tabellen}
+    for f in m.fks:
+        if f.tabelle in nachbarn and f.ziel in nachbarn and f.tabelle != f.ziel:
+            nachbarn[f.tabelle].add(f.ziel)
+            nachbarn[f.ziel].add(f.tabelle)
+            rein[f.ziel] += 1
+    rang = lambda n: (-rein[n], -len(nachbarn[n]), n)  # noqa: E731
+    h = {n: hoehe(t) for n, t in m.tabellen.items()}
+    raster = breite + abstand_x
+
+    gruppen, gesehen = [], set()
+    for start in sorted(nachbarn, key=rang):
+        if start in gesehen or not nachbarn[start]:
+            continue
+        gruppe, stapel = [], [start]
+        while stapel:
+            x = stapel.pop()
+            if x not in gesehen:
+                gesehen.add(x)
+                gruppe.append(x)
+                stapel.extend(nachbarn[x] - gesehen)
+        gruppen.append(gruppe)
+    gruppen.sort(key=lambda g: (-len(g), rang(min(g, key=rang))))
+
     pos: dict[str, tuple[float, float]] = {}
-    spalten: dict[int, list[str]] = {}
-    for n, e in ebenen(m).items():
-        spalten.setdefault(e, []).append(n)
-    for e, namen in sorted(spalten.items()):
-        y = 0.0
-        for n in sorted(namen):
-            pos[n] = (e * (breite + abstand_x), y)
-            y += hoehe(m.tabellen[n]) + abstand_y
+    x0 = 0.0
+    for gruppe in gruppen:
+        hub = min(gruppe, key=rang)
+        spalte = {hub: 0}
+        hoehe_seite = {-1: 0.0, 1: 0.0}
+        reihenfolge = [hub]
+        q = deque([hub])
+        while q:
+            x = q.popleft()
+            for k in sorted(nachbarn[x] - set(spalte), key=rang):
+                if spalte[x] == 0:
+                    seite = 1 if hoehe_seite[1] <= hoehe_seite[-1] else -1
+                    hoehe_seite[seite] += h[k] + abstand_y
+                    spalte[k] = seite
+                else:
+                    spalte[k] = spalte[x] + (1 if spalte[x] > 0 else -1)
+                reihenfolge.append(k)
+                q.append(k)
+        je_spalte: dict[int, list[str]] = {}
+        for n in reihenfolge:
+            je_spalte.setdefault(spalte[n], []).append(n)
+        links = min(je_spalte)
+        for c, namen in je_spalte.items():
+            gesamt = sum(h[n] for n in namen) + abstand_y * (len(namen) - 1)
+            y = -gesamt / 2
+            for n in namen:
+                pos[n] = (x0 + (c - links) * raster, y)
+                y += h[n] + abstand_y
+        x0 += (max(je_spalte) - links + 1) * raster + abstand_x
+
+    einzeln = sorted((n for n in nachbarn if not nachbarn[n]), key=lambda n: n)
+    if einzeln:
+        oben = min((y for _, y in pos.values()), default=0.0)
+        spalten = max(1, ceil(sqrt(len(einzeln) / 2)))
+        y_je = [oben] * spalten
+        for n in sorted(einzeln, key=lambda n: -h[n]):
+            c = y_je.index(min(y_je))
+            pos[n] = (x0 + c * (breite + abstand_x / 2), y_je[c])
+            y_je[c] += h[n] + abstand_y / 2
+    if pos:
+        dy = min(y for _, y in pos.values())
+        pos = {n: (x, y - dy) for n, (x, y) in pos.items()}
     return pos
 
 

@@ -136,6 +136,19 @@ class Hauptfenster(QMainWindow):
             self.editor.tabs.widget(i).hervorhebung.neu_einfaerben()
 
     # --- Verbindung ---------------------------------------------------------------------------------------------
+    def schema_gewaehlt(self, schema: str, objekte: dict | None = None, merken: bool = True):
+        """Arbeitsschema setzen (search_path/USE), merken, Editor und Diagramm informieren."""
+        t = self.t
+        if not t or not schema:
+            return
+        if merken and schema != t.aktuelles_schema:
+            from . import arbeiter as _a
+            _a.starte(lambda: t.setze_schema(schema), lambda _r: None)
+        t.aktuelles_schema = schema
+        if merken:
+            verbindungen.merke_schema(self.cfg, schema)
+        self.editor.schema_gewaehlt(schema, objekte)
+
     def status_text(self) -> str:
         if not self.t:
             return ""

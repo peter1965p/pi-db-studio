@@ -6,7 +6,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (QFileDialog, QHeaderView, QLineEdit, QMenu, QSpinBox, QSplitter, QTreeWidget,
                                QTreeWidgetItem, QVBoxLayout, QWidget)
 
-from .. import austausch
+from .. import austausch, verbindungen
 from . import arbeiter
 from .bausteine import Kopf, knopf, label, leiste, meldung, rueckfrage, tabelle, zeile
 from .raster import TabellenModell
@@ -96,31 +96,46 @@ class ExplorerSeite(QWidget):
             return
         self.kopf.status(self.h.status_text(), "pill")
 
+        gemerkt = verbindungen.gemerktes_schema(self.h.cfg)
+
         def lauf():
-            schemas = t.schemas()
-            std = t.standard_schema()
-            return schemas, std, t.objekte(std) if std else {}
+            zahlen = t.tabellen_zahlen()
+            schema, hinweis = t.bestes_schema(gemerkt, zahlen)
+            if schema:
+                t.setze_schema(schema)
+            return zahlen, schema, hinweis, t.objekte(schema) if schema else {}
         arbeiter.starte(lauf, self._schemas_da, lambda f: self.status.setText(f"Fehler: {f}"))
 
     def _schemas_da(self, daten):
-        schemas, std, objekte = daten
-        for s in schemas:
-            item = QTreeWidgetItem([s])
+        zahlen, std, hinweis, objekte = daten
+        self._laedt_schema = True
+        self.h.editor.setze_schemas(list(zahlen))
+        for s, n in zahlen.items():
+            item = QTreeWidgetItem([f"{s}  ({n})"])
             item.setData(0, ROLLE, ("schema", s))
+            item.setToolTip(0, f"{s}: {n} Tabelle{'n' if n != 1 else ''}")
             item.addChild(QTreeWidgetItem(["lädt …"]))
             self.baum.addTopLevelItem(item)
             if s == std:
                 self._objekte_da(item, objekte)
                 item.setExpanded(True)
-        self.h.editor.namen_aktualisieren(std, objekte)
+                self.baum.setCurrentItem(item)
+        self._laedt_schema = False
+        self.status.setText(hinweis)
+        self.h.schema_gewaehlt(std, objekte, merken=False)
 
     def _aufgeklappt(self, item):
         art = item.data(0, ROLLE)
-        if not art or art[0] != "schema" or item.childCount() != 1 or item.child(0).data(0, ROLLE):
+        if not art or art[0] != "schema" or getattr(self, "_laedt_schema", False):
             return
         t, s = self.h.t, art[1]
-        arbeiter.starte(lambda: t.objekte(s), lambda o: self._objekte_da(item, o),
-                        lambda f: self.status.setText(f"Fehler: {f}"))
+        geladen = not (item.childCount() == 1 and not item.child(0).data(0, ROLLE))
+
+        def da(o):
+            if not geladen:
+                self._objekte_da(item, o)
+            self.h.schema_gewaehlt(s, o)
+        arbeiter.starte(lambda: t.objekte(s), da, lambda f: self.status.setText(f"Fehler: {f}"))
 
     def _objekte_da(self, item, objekte):
         item.takeChildren()

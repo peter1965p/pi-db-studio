@@ -188,6 +188,7 @@ class Treiber:
         self.conn = None
         self.sperre = threading.RLock()
         self.schreibschutz = False
+        self.aktuelles_schema: str | None = None
 
     # Verbindung
     def verbinden(self, cfg: dict, passwort: str | None) -> "Treiber":
@@ -224,6 +225,31 @@ class Treiber:
     def standard_schema(self) -> str:
         s = self.schemas()
         return s[0] if s else ""
+
+    def tabellen_zahlen(self) -> dict[str, int]:
+        """Schema -> Anzahl Tabellen (Reihenfolge wie schemas())."""
+        return {s: len(self.objekte(s).get("tabellen", [])) for s in self.schemas()}
+
+    def bestes_schema(self, gemerkt: str | None = None, zahlen: dict[str, int] | None = None) -> tuple[str, str]:
+        """Schema, das beim Verbinden gezeigt wird, und ein Hinweis, falls vom Standard abgewichen wurde.
+
+        Reihenfolge: zuletzt gewähltes Schema (falls noch vorhanden) > Standardschema, wenn es Tabellen hat >
+        Schema mit den meisten Tabellen > Standardschema."""
+        zahlen = self.tabellen_zahlen() if zahlen is None else zahlen
+        std = self.standard_schema()
+        if gemerkt and gemerkt in zahlen:
+            return gemerkt, ""
+        if not zahlen or zahlen.get(std, 0) > 0:
+            return std, ""
+        reihenfolge = list(zahlen)
+        best = max(reihenfolge, key=lambda s: (zahlen[s], -reihenfolge.index(s)))
+        if zahlen[best] == 0:
+            return std, ""
+        return best, f"„{std}“ ist leer – zeige Schema „{best}“."
+
+    def setze_schema(self, schema: str) -> None:
+        """Arbeitsschema für unqualifizierte Namen (search_path/USE/...). Basis: nur merken."""
+        self.aktuelles_schema = schema
 
     # Ausführen
     def _cursor(self):
@@ -411,6 +437,11 @@ class DuckDB(Treiber):
     def standard_schema(self):
         return "main"
 
+    def setze_schema(self, schema):
+        super().setze_schema(schema)
+        with self.sperre:
+            self.conn.execute(f"SET schema = '{schema.replace(chr(39), chr(39) * 2)}'")
+
     def objekte(self, schema):
         o = {"tabellen": [], "views": [], "indizes": [], "funktionen": []}
         for name, typ in self._q(
@@ -503,6 +534,17 @@ class PostgreSQL(Treiber):
         s = self.schemas()
         return "public" if "public" in s else (s[0] if s else "public")
 
+    def tabellen_zahlen(self):
+        zahl = dict(self.abfrage(
+            "SELECT n.nspname, count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+            "WHERE c.relkind IN ('r','p','f') GROUP BY 1", limit=100000).zeilen)
+        return {s: int(zahl.get(s, 0)) for s in self.schemas()}
+
+    def setze_schema(self, schema):
+        super().setze_schema(schema)
+        pfad = self.zitiere(schema) + (", public" if schema != "public" else "")
+        self.abfrage(f"SET search_path TO {pfad}")
+
     def objekte(self, schema):
         o = {"tabellen": [], "views": [], "indizes": [], "funktionen": []}
         for name, kind in self.abfrage(
@@ -594,6 +636,15 @@ class MySQL(Treiber):
         db = self.abfrage("SELECT DATABASE()").zeilen[0][0]
         return db or super().standard_schema()
 
+    def tabellen_zahlen(self):
+        zahl = dict(self.abfrage("SELECT table_schema, count(*) FROM information_schema.tables "
+                                 "WHERE table_type = 'BASE TABLE' GROUP BY 1", limit=100000).zeilen)
+        return {s: int(zahl.get(s, 0)) for s in self.schemas()}
+
+    def setze_schema(self, schema):
+        super().setze_schema(schema)
+        self.abfrage(f"USE {self.zitiere(schema)}")
+
     def objekte(self, schema):
         o = {"tabellen": [], "views": [], "indizes": [], "funktionen": []}
         for name, typ in self.abfrage("SELECT table_name, table_type FROM information_schema.tables WHERE table_schema = %s "
@@ -664,6 +715,11 @@ class SQLServer(Treiber):
 
     def standard_schema(self):
         return "dbo"
+
+    def tabellen_zahlen(self):
+        zahl = dict(self.abfrage("SELECT TABLE_SCHEMA, count(*) FROM INFORMATION_SCHEMA.TABLES "
+                                 "WHERE TABLE_TYPE = 'BASE TABLE' GROUP BY TABLE_SCHEMA", limit=100000).zeilen)
+        return {s: int(zahl.get(s, 0)) for s in self.schemas()}
 
     def objekte(self, schema):
         o = {"tabellen": [], "views": [], "indizes": [], "funktionen": []}

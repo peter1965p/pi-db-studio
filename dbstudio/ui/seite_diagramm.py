@@ -2,20 +2,22 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QPointF, QRectF, QSize, Qt, Signal
+from PySide6.QtCore import QPointF, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QFontMetricsF, QImage, QPainter, QPainterPath, QPen
-from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout,
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QFrame, QLabel,
+                               QPushButton,
                                QGraphicsItem, QGraphicsObject, QGraphicsPathItem, QGraphicsScene, QGraphicsView,
                                QHeaderView, QLineEdit, QPlainTextEdit, QTableWidget, QTableWidgetItem, QVBoxLayout,
                                QWidget)
 
-from .. import erm, ki, sqlschutz, treiber, verbindungen
+from .. import efcore, erm, ki, sqlschutz, treiber, verbindungen
 from ..treiber import Spalte
 from . import arbeiter, theme
 from .bausteine import Kopf, knopf, label, leiste, meldung, rueckfrage, zeile
 
 BREITE = 250
 KOPF_H = 34
+KOPF_EF = 44
 ZEILE_H = 22
 TYPEN = ["ganzzahl", "grosse_ganzzahl", "text", "kommazahl", "dezimal", "wahrheitswert", "datum", "zeitstempel",
          "zeit", "binaer", "json", "uuid"]
@@ -27,91 +29,269 @@ def _farbe(name: str) -> QColor:
 
 
 # --- Grafik-Elemente ------------------------------------------------------------------------------------------------
+RASTER = 20
+EINKLAPP_AB = 12      # Karten mit mehr Spalten starten eingeklappt
+EINGEKLAPPT_ZEIGEN = 8
+MODI = {"alle": "Alle Spalten", "schluessel": "Nur Schlüssel", "namen": "Nur Tabellennamen"}
+ART_FARBE = {"1:n": "blau", "1:1": "akzent", "n:m": "neon"}
+ART_TEXT = {"1:n": "1:n – eins zu vielen", "1:1": "1:1 – eins zu eins", "n:m": "n:m – viele zu vielen (über Zwischentabelle)",
+            "optional": "0..1 – optional (FK darf leer sein)"}
+
+
+def _einzahl(name: str) -> str:
+    """Grobe Einzahl für Tooltips: firmen → Firma, entwuerfe → Entwurf, kunden → Kunde."""
+    n = name.replace("_", " ")
+    for endung, ersatz in (("ungen", "ung"), ("uerfe", "urf"), ("eien", "ei"), ("men", "ma"), ("nen", "n"),
+                           ("en", "e"), ("ies", "y"), ("es", "e"), ("s", ""), ("e", "e")):
+        if n.endswith(endung) and len(n) > len(endung) + 2:
+            n = n[: -len(endung)] + ersatz
+            break
+    return n[:1].upper() + n[1:]
+
+
+def _mehrzahl(name: str) -> str:
+    n = name.replace("_", " ")
+    return n[:1].upper() + n[1:]
+
+
+def runde_ecken(punkte: list[QPointF], r: float = 8) -> QPainterPath:
+    """Polylinie mit abgerundeten Ecken."""
+    pfad = QPainterPath(punkte[0])
+    for i in range(1, len(punkte) - 1):
+        a, b, c = punkte[i - 1], punkte[i], punkte[i + 1]
+        d1 = QPointF(b.x() - a.x(), b.y() - a.y())
+        d2 = QPointF(c.x() - b.x(), c.y() - b.y())
+        l1 = max(1e-6, (d1.x() ** 2 + d1.y() ** 2) ** 0.5)
+        l2 = max(1e-6, (d2.x() ** 2 + d2.y() ** 2) ** 0.5)
+        rr = min(r, l1 / 2, l2 / 2)
+        vor = QPointF(b.x() - d1.x() / l1 * rr, b.y() - d1.y() / l1 * rr)
+        nach = QPointF(b.x() + d2.x() / l2 * rr, b.y() + d2.y() / l2 * rr)
+        pfad.lineTo(vor)
+        pfad.quadTo(b, nach)
+    pfad.lineTo(punkte[-1])
+    return pfad
+
+
 class TabellenKarte(QGraphicsObject):
     bewegt = Signal()
     losgelassen = Signal()
     beziehung_gezogen = Signal(str, str, str, str)  # von_tabelle, von_spalte, nach_tabelle, nach_spalte
     spalte_doppelklick = Signal(str, str)
+    schwebt = Signal(str)  # Tabellenname oder "" beim Verlassen
+    groesse_geaendert = Signal()
 
-    def __init__(self, tabelle: erm.Tabelle, fk_spalten: set[str], zwischen: bool):
+    def __init__(self, tabelle: erm.Tabelle, fk_spalten: set[str], zwischen: bool, modus: str = "alle",
+                 stil: str = "db", schema: str = "", navs: list | None = None):
         super().__init__()
         self.t, self.fk_spalten, self.zwischen = tabelle, fk_spalten, zwischen
+        self.modus = modus
+        self.stil, self.schema_name, self.navs = stil, schema, navs or []
+        self.eingeklappt = len(tabelle.spalten) > EINKLAPP_AB
+        self.einrasten = True
         self.setFlags(QGraphicsItem.ItemIsMovable | QGraphicsItem.ItemIsSelectable | QGraphicsItem.ItemSendsGeometryChanges)
+        self.setAcceptHoverEvents(True)
         self.setCursor(Qt.OpenHandCursor)
         self.setZValue(2)
         self._ziehlinie: QGraphicsPathItem | None = None
         self._zieh_von: str | None = None
         self.setToolTip("Kopf ziehen = verschieben · von einer Spalte auf eine Spalte einer anderen Tabelle ziehen = "
-                        "Beziehung · Doppelklick auf Spalte = ändern")
+                        "Beziehung · Doppelklick auf Spalte = ändern · ▾/▸ = ein-/ausklappen")
+
+    # Sichtbarkeit
+    def einklappbar(self) -> bool:
+        return self.modus == "alle" and len(self.t.spalten) > EINGEKLAPPT_ZEIGEN
+
+    def sichtbar(self) -> list:
+        if self.modus == "namen":
+            return []
+        if self.modus == "schluessel":
+            return [s for s in self.t.spalten if s.pk or s.name in self.fk_spalten]
+        if self.eingeklappt and self.einklappbar():
+            wichtig = [s for s in self.t.spalten if s.pk or s.name in self.fk_spalten]
+            rest = [s for s in self.t.spalten if s not in wichtig]
+            return (wichtig + rest)[:max(EINGEKLAPPT_ZEIGEN, len(wichtig))]
+        return list(self.t.spalten)
+
+    def versteckt(self) -> int:
+        return len(self.t.spalten) - len(self.sichtbar()) if self.modus == "alle" else 0
+
+    def setze_modus(self, modus: str):
+        self.prepareGeometryChange()
+        self.modus = modus
+        self.update()
+        self.groesse_geaendert.emit()
+
+    def setze_stil(self, stil: str):
+        self.prepareGeometryChange()
+        self.stil = stil
+        self.update()
+        self.groesse_geaendert.emit()
+
+    @property
+    def kopf_h(self) -> float:
+        return KOPF_EF if self.stil == "ef" else KOPF_H
+
+    def zeilen(self) -> list[tuple]:
+        """Sichtbare Zeilen der Karte: („sp“, Spalte) | („mehr“, n) | („abschnitt“, Text) | („nav“, Name, Typ)."""
+        sp = [("sp", x) for x in self.sichtbar()]
+        mehr = [("mehr", self.versteckt())] if self.versteckt() else []
+        if self.stil != "ef":
+            return sp + mehr
+        if self.modus == "namen":
+            return []
+        z = ([("abschnitt", "Eigenschaften")] + sp + mehr) if sp or mehr else []
+        if self.navs:
+            z += [("abschnitt", "Navigationen")] + [("nav", n, t) for n, t, _ in self.navs]
+        return z
+
+    def umklappen(self):
+        self.prepareGeometryChange()
+        self.eingeklappt = not self.eingeklappt
+        self.update()
+        self.groesse_geaendert.emit()
 
     @property
     def hoehe(self) -> float:
-        return KOPF_H + ZEILE_H * len(self.t.spalten) + 8
+        n = len(self.zeilen())
+        return self.kopf_h + ZEILE_H * n + (8 if n else 0)
 
     def boundingRect(self) -> QRectF:
         return QRectF(-1, -1, BREITE + 2, self.hoehe + 2)
 
+    def rechteck(self) -> QRectF:
+        return self.mapRectToScene(QRectF(0, 0, BREITE, self.hoehe))
+
     def spalte_y(self, name: str) -> float:
-        for i, s in enumerate(self.t.spalten):
-            if s.name == name:
-                return KOPF_H + ZEILE_H * i + ZEILE_H / 2
-        return KOPF_H / 2
+        for i, z in enumerate(self.zeilen()):
+            if z[0] == "sp" and z[1].name == name:
+                return self.kopf_h + ZEILE_H * i + ZEILE_H / 2
+        return self.kopf_h / 2
+
+    def zeile_bei(self, y: float) -> tuple | None:
+        z = self.zeilen()
+        i = int((y - self.kopf_h) // ZEILE_H)
+        return z[i] if y > self.kopf_h and 0 <= i < len(z) else None
 
     def spalte_bei(self, y: float) -> str | None:
-        i = int((y - KOPF_H) // ZEILE_H)
-        return self.t.spalten[i].name if y > KOPF_H and 0 <= i < len(self.t.spalten) else None
+        z = self.zeile_bei(y)
+        return z[1].name if z and z[0] == "sp" else None
 
     def paint(self, p: QPainter, *_):
         p.setRenderHint(QPainter.Antialiasing)
-        rand = _farbe("akzent") if self.isSelected() else _farbe("rand")
+        kh = self.kopf_h
+        rand = _farbe("akzent") if self.isSelected() else (_farbe("neon") if self.zwischen else _farbe("rand"))
         p.setPen(QPen(rand, 2 if self.isSelected() else 1))
         p.setBrush(_farbe("karte"))
         p.drawRoundedRect(QRectF(0, 0, BREITE, self.hoehe), 10, 10)
         kopf = QPainterPath()
-        kopf.addRoundedRect(QRectF(0, 0, BREITE, KOPF_H), 10, 10)
-        kopf.addRect(QRectF(0, KOPF_H - 10, BREITE, 10))
-        p.fillPath(kopf, _farbe("blau" if self.zwischen else "aktiv"))
+        kopf.addRoundedRect(QRectF(0, 0, BREITE, kh), 10, 10)
+        if self.hoehe > kh + 2:
+            kopf.addRect(QRectF(0, kh - 10, BREITE, 10))
+        p.fillPath(kopf, _farbe("aktiv"))
         f = QFont()
         f.setBold(True)
         f.setPointSizeF(10.5)
         p.setFont(f)
-        p.setPen(_farbe("auf_akzent") if self.zwischen else _farbe("akzent"))
-        titel = self.t.name + ("   n:m" if self.zwischen else "")
-        p.drawText(QRectF(12, 0, BREITE - 24, KOPF_H), Qt.AlignVCenter | Qt.AlignLeft,
-                   QFontMetricsF(f).elidedText(titel, Qt.ElideRight, BREITE - 24))
+        p.setPen(_farbe("akzent"))
+        rechts_frei = 30 if self.einklappbar() else 12
+        titelbreite = BREITE - 12 - rechts_frei - (52 if self.zwischen else 0)
+        if self.stil == "ef":
+            titel = efcore.klassenname(self.t.name)
+            p.drawText(QRectF(12, 4, titelbreite, 22), Qt.AlignVCenter | Qt.AlignLeft,
+                       QFontMetricsF(f).elidedText(titel, Qt.ElideRight, titelbreite))
+            k = QFont()
+            k.setPointSizeF(8)
+            p.setFont(k)
+            p.setPen(_farbe("gedimmt"))
+            unter = f"[{self.schema_name}].[{self.t.name}]" if self.schema_name else f"[{self.t.name}]"
+            p.drawText(QRectF(12, 24, titelbreite, 16), Qt.AlignVCenter | Qt.AlignLeft,
+                       QFontMetricsF(k).elidedText(unter, Qt.ElideRight, titelbreite))
+        else:
+            p.drawText(QRectF(12, 0, titelbreite, kh), Qt.AlignVCenter | Qt.AlignLeft,
+                       QFontMetricsF(f).elidedText(self.t.name, Qt.ElideRight, titelbreite))
+        if self.zwischen:  # Plakette n:m
+            plakette(p, QPointF(BREITE - rechts_frei - 26, kh / 2), "n:m", _farbe("neon"))
+        if self.einklappbar():
+            p.setPen(_farbe("gedimmt"))
+            p.setFont(f)
+            p.drawText(QRectF(BREITE - 28, 0, 22, kh), Qt.AlignCenter, "▸" if self.eingeklappt else "▾")
         normal, fett, klein = QFont(), QFont(), QFont()
         normal.setPointSizeF(9.5)
         fett.setPointSizeF(9.5)
         fett.setBold(True)
         klein.setPointSizeF(8.5)
-        for i, s in enumerate(self.t.spalten):
-            y = KOPF_H + ZEILE_H * i
-            zeile = QRectF(0, y, BREITE, ZEILE_H)
+        for i, z in enumerate(self.zeilen()):
+            y = kh + ZEILE_H * i
+            zeile_r = QRectF(0, y, BREITE, ZEILE_H)
+            if i and z[0] != "abschnitt":
+                p.setPen(QPen(_farbe("rand"), 0.5))
+                p.drawLine(zeile_r.topLeft() + QPointF(8, 0), zeile_r.topRight() - QPointF(8, 0))
+            if z[0] == "abschnitt":
+                p.setFont(klein)
+                p.setPen(_farbe("blau"))
+                p.drawText(QRectF(10, y, BREITE - 20, ZEILE_H), Qt.AlignVCenter | Qt.AlignLeft, z[1].upper())
+                p.setPen(QPen(_farbe("rand"), 1))
+                p.drawLine(QPointF(10, y + ZEILE_H - 2), QPointF(BREITE - 10, y + ZEILE_H - 2))
+                continue
+            if z[0] == "mehr":
+                p.setFont(klein)
+                p.setPen(_farbe("gedimmt"))
+                p.drawText(QRectF(30, y, BREITE - 40, ZEILE_H), Qt.AlignVCenter | Qt.AlignLeft,
+                           f"… {z[1]} weitere {'Eigenschaften' if self.stil == 'ef' else 'Spalten'} (klicken)")
+                continue
+            if z[0] == "nav":
+                p.setFont(normal)
+                p.setPen(_farbe("blau"))
+                p.drawText(QRectF(8, y, 20, ZEILE_H), Qt.AlignVCenter | Qt.AlignHCenter, "⇢")
+                p.setPen(_farbe("text"))
+                p.drawText(QRectF(30, y, 110, ZEILE_H), Qt.AlignVCenter | Qt.AlignLeft,
+                           QFontMetricsF(normal).elidedText(z[1], Qt.ElideRight, 110))
+                p.setFont(klein)
+                p.setPen(_farbe("gedimmt"))
+                p.drawText(QRectF(142, y, BREITE - 150, ZEILE_H), Qt.AlignVCenter | Qt.AlignRight,
+                           QFontMetricsF(klein).elidedText(z[2], Qt.ElideRight, BREITE - 150))
+                continue
+            s = z[1]
             symbol = "🔑" if s.pk else ("↗" if s.name in self.fk_spalten else "")
             p.setFont(normal)
             p.setPen(_farbe("akzent") if s.pk else _farbe("blau"))
             p.drawText(QRectF(8, y, 20, ZEILE_H), Qt.AlignVCenter | Qt.AlignHCenter, symbol)
             p.setFont(fett if not s.nullbar else normal)
             p.setPen(_farbe("text"))
+            name = efcore.eigenschaft(s.name) if self.stil == "ef" else s.name
             p.drawText(QRectF(30, y, 120, ZEILE_H), Qt.AlignVCenter | Qt.AlignLeft,
-                       QFontMetricsF(p.font()).elidedText(s.name, Qt.ElideRight, 120))
+                       QFontMetricsF(p.font()).elidedText(name, Qt.ElideRight, 120))
             p.setFont(klein)
             p.setPen(_farbe("gedimmt"))
-            typ = (s.typ or "").lower() + ("" if s.nullbar else " ·NN")
+            typ = efcore.cs_typ(s) if self.stil == "ef" else (s.typ or "").lower() + ("" if s.nullbar else " ·NN")
             p.drawText(QRectF(152, y, BREITE - 160, ZEILE_H), Qt.AlignVCenter | Qt.AlignRight,
                        QFontMetricsF(klein).elidedText(typ, Qt.ElideRight, BREITE - 160))
-            if i:
-                p.setPen(QPen(_farbe("rand"), 0.5))
-                p.drawLine(zeile.topLeft() + QPointF(8, 0), zeile.topRight() - QPointF(8, 0))
 
     def itemChange(self, change, wert):
+        if change == QGraphicsItem.ItemPositionChange and self.einrasten and self.scene() is not None:
+            return QPointF(round(wert.x() / RASTER) * RASTER, round(wert.y() / RASTER) * RASTER)
         if change == QGraphicsItem.ItemPositionHasChanged:
             self.bewegt.emit()
         return super().itemChange(change, wert)
 
+    def hoverEnterEvent(self, e):
+        self.schwebt.emit(self.t.name)
+        super().hoverEnterEvent(e)
+
+    def hoverLeaveEvent(self, e):
+        self.schwebt.emit("")
+        super().hoverLeaveEvent(e)
+
     # Ziehen: Kopf verschiebt, Spalte zieht eine Beziehung
     def mousePressEvent(self, e):
-        spalte = self.spalte_bei(e.pos().y())
+        pos = e.pos()
+        z = self.zeile_bei(pos.y())
+        if e.button() == Qt.LeftButton and ((self.einklappbar() and pos.y() < self.kopf_h and pos.x() > BREITE - 30)
+                                             or (z and z[0] == "mehr")):
+            self.umklappen()
+            e.accept()
+            return
+        spalte = self.spalte_bei(pos.y())
         if e.button() == Qt.LeftButton and spalte:
             self._zieh_von = spalte
             self._ziehlinie = QGraphicsPathItem()
@@ -154,63 +334,203 @@ class TabellenKarte(QGraphicsObject):
             self.spalte_doppelklick.emit(self.t.name, spalte)
 
 
-class BeziehungsLinie(QGraphicsPathItem):
-    """Linie vom FK (Kind, „viele“) zur referenzierten Spalte (Eltern, „eins“) mit Krähenfuß."""
+def plakette(p: QPainter, mitte: QPointF, text: str, farbe: QColor):
+    """Kleine runde Beschriftung („1“, „n“, „0..1“, „n:m“) mit Rand in der Linienfarbe."""
+    f = QFont()
+    f.setBold(True)
+    f.setPointSizeF(8.5)
+    breite = QFontMetricsF(f).horizontalAdvance(text) + 10
+    r = QRectF(mitte.x() - breite / 2, mitte.y() - 9, breite, 18)
+    p.setPen(QPen(farbe, 1.4))
+    p.setBrush(_farbe("bg"))
+    p.drawRoundedRect(r, 9, 9)
+    p.setFont(f)
+    p.setPen(farbe)
+    p.drawText(r, Qt.AlignCenter, text)
 
-    def __init__(self, fk: erm.Fremdschluessel, kind: TabellenKarte, eltern: TabellenKarte, art: str):
+
+class BeziehungsLinie(QGraphicsPathItem):
+    """Rechtwinklige Linie vom FK (Kind, „viele“) zur referenzierten Spalte (Eltern, „eins“) mit Krähenfuß und
+    Plaketten an beiden Enden. Farbe je Art: 1:n Blau, 1:1 Orange, n:m (über Zwischentabelle) Neon-Grün gestrichelt."""
+
+    def __init__(self, fk: erm.Fremdschluessel, kind: TabellenKarte, eltern: TabellenKarte, art: str,
+                 optional: bool = False, n_zu_m: bool = False, stil: str = "db", ef_mult: tuple[str, str] = ("1", "*")):
         super().__init__()
-        self.fk, self.kind, self.eltern, self.art = fk, kind, eltern, art
+        self.fk, self.kind, self.eltern = fk, kind, eltern
+        self.stil, self.ef_mult = stil, ef_mult
+        self.art = "n:m" if n_zu_m else art
+        self.basis_art, self.optional = art, optional
+        self.versatz = 0.0
+        self.betont = False
+        self._plaketten: list[tuple[QPointF, str]] = []
         self.setZValue(1)
-        self.setToolTip(f"{fk.tabelle}.{', '.join(fk.spalten)} → {fk.ziel}.{', '.join(fk.ziel_spalten)}  ({art})\n"
-                        f"ON DELETE {fk.bei_loeschen} · ON UPDATE {fk.bei_aendern}")
+        self.setAcceptHoverEvents(True)
+        self.setToolTip(self.tooltip())
         self.aktualisieren()
 
-    def _seite(self, karte: TabellenKarte, spalte: str, rechts: bool) -> QPointF:
-        return karte.mapToScene(QPointF(BREITE if rechts else 0, karte.spalte_y(spalte)))
+    def tooltip(self) -> str:
+        f = self.fk
+        kurz = "1:1" if self.basis_art == "1:1" else "n:1"
+        technik = (f"{f.tabelle}.{', '.join(f.spalten)} → {f.ziel}.{', '.join(f.ziel_spalten)}  "
+                   f"({kurz}{', optional' if self.optional else ''}, ON DELETE {f.bei_loeschen}, ON UPDATE {f.bei_aendern})")
+        if self.basis_art == "1:1":
+            worte = f"Eine {_einzahl(f.ziel)} hat höchstens eine {_einzahl(f.tabelle)}."
+        else:
+            worte = f"Eine {_einzahl(f.ziel)} hat viele {_mehrzahl(f.tabelle)}."
+        if self.optional:
+            worte += f" Eine {_einzahl(f.tabelle)} kann auch ohne {_einzahl(f.ziel)} existieren."
+        if self.art == "n:m":
+            worte += f"  ({f.tabelle} ist Zwischentabelle einer n:m-Beziehung.)"
+        return f"{worte}\n{technik}"
+
+    def farbe(self) -> QColor:
+        return _farbe(ART_FARBE.get(self.art, "blau"))
 
     def aktualisieren(self):
-        kx = self.kind.scenePos().x()
-        ex = self.eltern.scenePos().x()
-        if self.kind is self.eltern:  # Selbstbezug: Schleife rechts
-            a = self._seite(self.kind, self.fk.spalten[0], True)
-            b = self._seite(self.kind, self.fk.ziel_spalten[0], True)
-            pfad = QPainterPath(a)
-            pfad.cubicTo(a + QPointF(60, 0), b + QPointF(60, 0), b)
-            richtung_a = richtung_b = 1
+        kr, er = self.kind.rechteck(), self.eltern.rechteck()
+        ky = self.kind.mapToScene(QPointF(0, self.kind.spalte_y(self.fk.spalten[0]))).y()
+        ey = self.eltern.mapToScene(QPointF(0, self.eltern.spalte_y(self.fk.ziel_spalten[0]))).y()
+        abstand = 28.0
+        if self.kind is self.eltern:
+            a, b = QPointF(kr.right(), ky), QPointF(kr.right(), ey)
+            mx = kr.right() + abstand + self.versatz
+            punkte = [a, QPointF(mx, a.y()), QPointF(mx, b.y()), b]
+            ra = rb = 1
+        elif kr.right() + 2 * abstand <= er.left():      # Kind links vom Eltern
+            a, b = QPointF(kr.right(), ky), QPointF(er.left(), ey)
+            mx = (b.x() - abstand if b.x() - a.x() > 4 * abstand else (a.x() + b.x()) / 2) + self.versatz
+            punkte = [a, QPointF(mx, a.y()), QPointF(mx, b.y()), b]
+            ra, rb = 1, -1
+        elif er.right() + 2 * abstand <= kr.left():      # Kind rechts vom Eltern
+            a, b = QPointF(kr.left(), ky), QPointF(er.right(), ey)
+            mx = (b.x() + abstand if a.x() - b.x() > 4 * abstand else (a.x() + b.x()) / 2) - self.versatz
+            punkte = [a, QPointF(mx, a.y()), QPointF(mx, b.y()), b]
+            ra, rb = -1, 1
+        else:                                             # übereinander: außen rechts herum
+            a, b = QPointF(kr.right(), ky), QPointF(er.right(), ey)
+            mx = max(kr.right(), er.right()) + abstand + self.versatz
+            punkte = [a, QPointF(mx, a.y()), QPointF(mx, b.y()), b]
+            ra = rb = 1
+        if abs(punkte[1].y() - punkte[2].y()) < 1:
+            punkte = [punkte[0], punkte[3]]
+        pfad = runde_ecken(punkte)
+        if self.stil == "ef":  # EF/DGML: Pfeil zur Hauptentität, Multiplizität „1“/„0..1“ ↔ „*“
+            pfad.moveTo(b + QPointF(rb * 14, -7))
+            pfad.lineTo(b)
+            pfad.lineTo(b + QPointF(rb * 14, 7))
+            self._plaketten = [(b + QPointF(rb * 30, -13), self.ef_mult[0]), (a + QPointF(ra * 22, -13), self.ef_mult[1])]
+            self.setPath(pfad)
+            stift = QPen(self.farbe(), 2.6 if self.betont else 1.9)
+            if self.art == "n:m":
+                stift.setStyle(Qt.DashLine)
+            self.setPen(stift)
+            self.update()
+            return
+        # Enden: Eltern „eins“ (Doppelstrich bzw. Kreis+Strich bei optional), Kind „viele“ (Krähenfuß) oder „eins“
+        if self.optional:
+            self._kreis(pfad, b, rb)
+            self._strich(pfad, b, rb, 18)
         else:
-            kind_rechts = kx + BREITE / 2 < ex + BREITE / 2
-            a = self._seite(self.kind, self.fk.spalten[0], kind_rechts)
-            b = self._seite(self.eltern, self.fk.ziel_spalten[0], not kind_rechts)
-            richtung_a = 1 if kind_rechts else -1
-            richtung_b = -richtung_a
-            dx = max(40.0, abs(b.x() - a.x()) / 2)
-            pfad = QPainterPath(a)
-            pfad.cubicTo(a + QPointF(richtung_a * dx, 0), b + QPointF(richtung_b * dx, 0), b)
-        # Enden: „viele“ (Krähenfuß) beim Kind, „eins“ (Strich) beim Eltern; 1:1 beidseitig Strich
-        self._eins(pfad, b, richtung_b)
-        if self.art == "1:1":
-            self._eins(pfad, a, richtung_a)
+            self._strich(pfad, b, rb, 12)
+            self._strich(pfad, b, rb, 18)
+        if self.basis_art == "1:1":
+            self._strich(pfad, a, ra, 12)
+            self._strich(pfad, a, ra, 18)
         else:
-            self._kraehenfuss(pfad, a, richtung_a)
+            self._kraehenfuss(pfad, a, ra)
+            self._strich(pfad, a, ra, 22)
+        self._plaketten = [(b + QPointF(rb * 34, -13), "0..1" if self.optional else "1"),
+                           (a + QPointF(ra * 36, -13), "1" if self.basis_art == "1:1" else "n")]
         self.setPath(pfad)
-        self.setPen(QPen(_farbe("blau"), 1.6))
+        stift = QPen(self.farbe(), 2.6 if self.betont else 1.9)
+        if self.art == "n:m":
+            stift.setStyle(Qt.DashLine)
+        stift.setCapStyle(Qt.RoundCap)
+        self.setPen(stift)
+        self.update()
+
+    def boundingRect(self) -> QRectF:
+        return super().boundingRect().adjusted(-40, -24, 40, 24)
+
+    def shape(self) -> QPainterPath:
+        from PySide6.QtGui import QPainterPathStroker
+        s = QPainterPathStroker()
+        s.setWidth(10)
+        return s.createStroke(self.path())
+
+    def paint(self, p: QPainter, option, widget=None):
+        super().paint(p, option, widget)
+        p.setRenderHint(QPainter.Antialiasing)
+        for pos, text in self._plaketten:
+            plakette(p, pos, text, self.farbe())
+
+    def hoverEnterEvent(self, e):
+        self.betont = True
+        self.aktualisieren()
+        super().hoverEnterEvent(e)
+
+    def hoverLeaveEvent(self, e):
+        self.betont = False
+        self.aktualisieren()
+        super().hoverLeaveEvent(e)
 
     @staticmethod
-    def _eins(pfad: QPainterPath, p: QPointF, r: int):
-        for d in (10, 15):
-            pfad.moveTo(p + QPointF(r * d, -7))
-            pfad.lineTo(p + QPointF(r * d, 7))
+    def _strich(pfad: QPainterPath, p: QPointF, r: int, d: float):
+        pfad.moveTo(p + QPointF(r * d, -8))
+        pfad.lineTo(p + QPointF(r * d, 8))
+
+    @staticmethod
+    def _kreis(pfad: QPainterPath, p: QPointF, r: int):
+        pfad.addEllipse(p + QPointF(r * 9, 0), 5, 5)
+        pfad.moveTo(p)
 
     @staticmethod
     def _kraehenfuss(pfad: QPainterPath, p: QPointF, r: int):
-        spitze = p + QPointF(r * 14, 0)
-        for dy in (-8, 0, 8):
+        spitze = p + QPointF(r * 16, 0)
+        for dy in (-10, 0, 10):
             pfad.moveTo(spitze)
             pfad.lineTo(p + QPointF(0, dy))
 
 
+class Minikarte(QGraphicsView):
+    """Übersicht unten rechts; Rechteck = sichtbarer Ausschnitt, Klick springt dorthin."""
+
+    def __init__(self, haupt: "Ansicht"):
+        super().__init__(haupt.scene(), haupt)
+        self.haupt = haupt
+        self.setFixedSize(220, 140)
+        self.setInteractive(False)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setRenderHints(QPainter.Antialiasing)
+        self.setObjectName("minikarte")
+        self.setStyleSheet(f"#minikarte {{ background: {theme.AKTUELL['feld']}; border: 1px solid {theme.AKTUELL['rand']};"
+                           " border-radius: 8px; }")
+
+    def anpassen(self):
+        r = self.scene().itemsBoundingRect()
+        if not r.isEmpty():
+            self.fitInView(r.adjusted(-40, -40, 40, 40), Qt.KeepAspectRatio)
+        self.viewport().update()
+
+    def drawForeground(self, p: QPainter, rect):
+        sicht = self.haupt.mapToScene(self.haupt.viewport().rect()).boundingRect()
+        p.setPen(QPen(_farbe("akzent"), 0))
+        farbe = _farbe("akzent")
+        farbe.setAlpha(40)
+        p.setBrush(farbe)
+        p.drawRect(sicht)
+
+    def mousePressEvent(self, e):
+        self.haupt.centerOn(self.mapToScene(e.position().toPoint()))
+
+    def mouseMoveEvent(self, e):
+        if e.buttons():
+            self.haupt.centerOn(self.mapToScene(e.position().toPoint()))
+
+
 class Ansicht(QGraphicsView):
-    """Strg+Mausrad zoomt, Ziehen auf freier Fläche verschiebt."""
+    """Strg+Mausrad zoomt, Ziehen auf freier Fläche verschiebt; Minikarte unten rechts."""
 
     def __init__(self, szene):
         super().__init__(szene)
@@ -218,18 +538,82 @@ class Ansicht(QGraphicsView):
         self.setDragMode(QGraphicsView.ScrollHandDrag)
         self.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
         self.setViewportUpdateMode(QGraphicsView.BoundingRectViewportUpdate)
+        self.minikarte = Minikarte(self)
+        self.horizontalScrollBar().valueChanged.connect(lambda _: self.minikarte.viewport().update())
+        self.verticalScrollBar().valueChanged.connect(lambda _: self.minikarte.viewport().update())
+
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        m = self.minikarte
+        m.move(self.viewport().width() - m.width() - 12, self.viewport().height() - m.height() - 12)
+        m.viewport().update()
+        leg = getattr(self, "legende", None)
+        if leg is not None:
+            leg.adjustSize()
+            leg.move(self.viewport().width() - leg.width() - 12, 12)
 
     def wheelEvent(self, e):
         if e.modifiers() & Qt.ControlModifier:
             faktor = 1.15 if e.angleDelta().y() > 0 else 1 / 1.15
             neu = self.transform().m11() * faktor
-            if 0.15 < neu < 4:
+            if 0.1 < neu < 4:
                 self.scale(faktor, faktor)
+                self.minikarte.viewport().update()
             return
         super().wheelEvent(e)
 
+    def anpassen(self):
+        r = self.scene().itemsBoundingRect()
+        if not r.isEmpty():
+            self.fitInView(r.adjusted(-40, -150, 40, 170), Qt.KeepAspectRatio)  # Platz für Legende/Minikarte
+            if self.transform().m11() > 1.2:
+                self.resetTransform()
+                self.centerOn(r.center())
+        self.minikarte.anpassen()
+
     def zoom(self) -> float:
         return self.transform().m11()
+
+
+class Legende(QFrame):
+    """Ein-/ausklappbare Legende oben rechts."""
+
+    def __init__(self, eltern):
+        super().__init__(eltern)
+        self.setObjectName("legende")
+        self.offen = True
+        self.setStyleSheet(f"#legende {{ background: {theme.AKTUELL['karte']}; border: 1px solid {theme.AKTUELL['rand']};"
+                           " border-radius: 8px; }")
+        v = QVBoxLayout(self)
+        v.setContentsMargins(8, 4, 8, 6)
+        v.setSpacing(3)
+        self.knopf = QPushButton("Legende ▾")
+        self.knopf.setFlat(True)
+        self.knopf.setStyleSheet("padding: 2px 6px; font-size: 8.5pt; border: none; text-align: left;")
+        self.knopf.clicked.connect(self.umschalten)
+        v.addWidget(self.knopf)
+        self.inhalt = QWidget()
+        iv = QVBoxLayout(self.inhalt)
+        iv.setContentsMargins(0, 0, 0, 0)
+        iv.setSpacing(3)
+        for art, farbe, gestrichelt in (("1:1", "akzent", False), ("1:n", "blau", False), ("n:m", "neon", True),
+                                         ("optional", "blau", False)):
+            z = QLabel()
+            stil = "dashed" if gestrichelt else "solid"
+            z.setText(f"<span style='color:{theme.AKTUELL[farbe]}; font-size:8.5pt'><b>{'╍╍' if gestrichelt else '━━'}"
+                      f"</b>&nbsp; {ART_TEXT[art]}</span>")
+            iv.addWidget(z)
+        v.addWidget(self.inhalt)
+        self.adjustSize()
+
+    def umschalten(self):
+        self.offen = not self.offen
+        self.inhalt.setVisible(self.offen)
+        self.knopf.setText("Legende ▾" if self.offen else "Legende ▸")
+        self.adjustSize()
+        e = self.parentWidget()
+        if e is not None:
+            self.move(e.viewport().width() - self.width() - 12, 12)
 
 
 # --- Dialoge --------------------------------------------------------------------------------------------------------
@@ -389,13 +773,29 @@ class DiagrammSeite(QWidget):
         m = QMenu(export)
         m.addAction("PNG …", lambda: self.exportieren("png"))
         m.addAction("SVG …", lambda: self.exportieren("svg"))
+        m.addSeparator()
+        m.addAction("DbContext (C#, EF Core) …", self.dbcontext_exportieren)
         export.setMenu(m)
         self.info = label("", "gedimmt")
+        self.modus = QComboBox()
+        for k, n in MODI.items():
+            self.modus.addItem(n, k)
+        self.modus.currentIndexChanged.connect(self._modus_gewechselt)
+        self.stil = QComboBox()
+        self.stil.addItem("Datenbank-Stil", "db")
+        self.stil.addItem("EF-Core-Stil", "ef")
+        self.stil.setToolTip("EF-Core-Stil: Entitäten mit C#-Typen und Navigationen wie in EF Core Power Tools")
+        self.stil.activated.connect(lambda _: self._stil_gewechselt())
         lay.addLayout(zeile(label("Schema", "gedimmt"), self.schema, knopf("Aktualisieren", self.laden),
-                            knopf("Automatisch anordnen", self.auto_anordnen), self.k_neu, self.k_spalte, self.k_ki,
-                            export, None, self.info, dehnen=False))
+                            knopf("Automatisch anordnen", self.auto_anordnen),
+                            knopf("An Fenster anpassen", lambda: self.ansicht.anpassen()), self.modus, self.stil,
+                            self.k_neu, self.k_spalte, self.k_ki, export, None, self.info, dehnen=False))
         self.szene = QGraphicsScene(self)
+        self.szene.selectionChanged.connect(self._fokus_aktualisieren)
         self.ansicht = Ansicht(self.szene)
+        self.legende = Legende(self.ansicht)
+        self.ansicht.legende = self.legende
+        self._schwebend = ""
         lay.addWidget(self.ansicht, 1)
         self._knoepfe()
 
@@ -409,6 +809,8 @@ class DiagrammSeite(QWidget):
 
     def verbindung_gewechselt(self):
         self._knoepfe()
+        if self.h.t is not None:
+            self.stil.setCurrentIndex(self.stil.findData("ef" if self.h.t.art == "mssql" else "db"))
         self.schema.clear()
         self.szene.clear()
         self.karten, self.linien, self.modell = {}, [], None
@@ -416,16 +818,24 @@ class DiagrammSeite(QWidget):
         if not t:
             self.info.setText("")
             return
-        arbeiter.starte(lambda: (t.schemas(), t.standard_schema()), self._schemas_da,
-                        lambda f: self.info.setText(f"Fehler: {f}"))
+        gemerkt = verbindungen.gemerktes_schema(self.h.cfg)
+
+        def lauf():
+            zahlen = t.tabellen_zahlen()
+            return list(zahlen), *t.bestes_schema(gemerkt, zahlen)
+        arbeiter.starte(lauf, self._schemas_da, lambda f: self.info.setText(f"Fehler: {f}"))
 
     def _schemas_da(self, d):
-        schemas, standard = d
+        schemas, standard, hinweis = d
+        self.schema.blockSignals(True)
         self.schema.clear()
         self.schema.addItems(schemas)
         if standard in schemas:
             self.schema.setCurrentText(standard)
+        self.schema.blockSignals(False)
         self.laden()
+        if hinweis:
+            self._hinweis = hinweis
 
     def laden(self):
         t = self.h.t
@@ -442,9 +852,14 @@ class DiagrammSeite(QWidget):
         self.szene.clear()
         self.karten, self.linien = {}, []
         gespeichert = erm.positionen_laden(self.h.cfg.get("id", ""), m.schema)
-        auto = erm.auto_layout(m, BREITE, hoehe=lambda t: KOPF_H + ZEILE_H * len(t.spalten) + 8)
+        modus = self.modus.currentData() or "alle"
+        stil = self.stil.currentData() or "db"
+        navs = efcore.navigationen(m)
+        karten_neu = {n: TabellenKarte(t, m.fk_spalten(n), m.zwischentabelle(n), modus, stil, m.schema, navs.get(n))
+                      for n, t in m.tabellen.items()}
+        auto = erm.auto_layout(m, BREITE, hoehe=lambda t: karten_neu[t.name].hoehe)
         for n, t in m.tabellen.items():
-            k = TabellenKarte(t, m.fk_spalten(n), m.zwischentabelle(n))
+            k = karten_neu[n]
             if n in alte:
                 k.setPos(alte[n])
             elif n in gespeichert:
@@ -455,20 +870,95 @@ class DiagrammSeite(QWidget):
             k.losgelassen.connect(self._positionen_merken)
             k.beziehung_gezogen.connect(self.beziehung_neu)
             k.spalte_doppelklick.connect(self.spalte_aendern)
+            k.schwebt.connect(self._schweben)
+            k.groesse_geaendert.connect(self._linien_nachziehen)
             self.szene.addItem(k)
             self.karten[n] = k
         for f in m.fks:
             if f.tabelle in self.karten and f.ziel in self.karten and f.spalten and f.ziel_spalten:
-                lin = BeziehungsLinie(f, self.karten[f.tabelle], self.karten[f.ziel], m.kardinalitaet(f))
+                nullbar = {s.name: s.nullbar for s in m.tabellen[f.tabelle].spalten}
+                optional = any(nullbar.get(sp, False) for sp in f.spalten)
+                lin = BeziehungsLinie(f, self.karten[f.tabelle], self.karten[f.ziel], m.kardinalitaet(f),
+                                      optional=optional, n_zu_m=m.zwischentabelle(f.tabelle), stil=stil,
+                                      ef_mult=efcore.multiplizitaet(m, f))
                 self.szene.addItem(lin)
                 self.linien.append(lin)
+        self._versatz_verteilen()
         self.szene.setSceneRect(self.szene.itemsBoundingRect().adjusted(-200, -200, 400, 400))
+        QTimer.singleShot(0, self.ansicht.anpassen)
         nm = len(m.n_zu_m())
-        self.info.setText(f"{len(m.tabellen)} Tabellen · {len(m.fks)} Beziehungen" + (f" · {nm} n:m" if nm else ""))
+        hinweis, self._hinweis = getattr(self, "_hinweis", ""), ""
+        self.info.setText((hinweis + "  ·  " if hinweis else "")
+                          + f"{len(m.tabellen)} Tabellen · {len(m.fks)} Beziehungen" + (f" · {nm} n:m" if nm else ""))
 
     def _linien_nachziehen(self):
         for lin in self.linien:
             lin.aktualisieren()
+        self.ansicht.minikarte.viewport().update()
+
+    def _versatz_verteilen(self):
+        """Linien, die an derselben Karte enden, seitlich gestaffelt führen, damit sie sich nicht überdecken."""
+        gruppen: dict[str, list[BeziehungsLinie]] = {}
+        for lin in self.linien:
+            gruppen.setdefault(lin.fk.ziel, []).append(lin)
+        for liste in gruppen.values():
+            liste.sort(key=lambda l: l.kind.scenePos().y())
+            for i, lin in enumerate(liste):
+                lin.versatz = (i - (len(liste) - 1) / 2) * 12
+                lin.aktualisieren()
+
+    def _schweben(self, name: str):
+        self._schwebend = name
+        self._fokus_aktualisieren()
+
+    def _fokus_aktualisieren(self):
+        """Schwebende oder markierte Tabelle + Nachbarn + Linien betonen, Rest dimmen."""
+        try:
+            markiert = [n for n, k in self.karten.items() if k.isSelected()]
+        except RuntimeError:
+            return
+        fokus = self._schwebend or (markiert[0] if markiert else "")
+        if not fokus:
+            for k in self.karten.values():
+                k.setOpacity(1.0)
+            for lin in self.linien:
+                lin.setOpacity(1.0)
+            return
+        nah = {fokus}
+        for lin in self.linien:
+            if fokus in (lin.fk.tabelle, lin.fk.ziel):
+                nah |= {lin.fk.tabelle, lin.fk.ziel}
+        for n, k in self.karten.items():
+            k.setOpacity(1.0 if n in nah else 0.25)
+        for lin in self.linien:
+            lin.setOpacity(1.0 if fokus in (lin.fk.tabelle, lin.fk.ziel) else 0.12)
+
+    def _stil_gewechselt(self):
+        if self.modell:
+            self._stil_manuell = True
+            self.zeichnen(self.modell)
+            self.auto_anordnen()
+
+    def dbcontext_exportieren(self, pfad: str | None = None) -> str | None:
+        if not self.modell:
+            return None
+        if pfad is None:
+            pfad, _ = QFileDialog.getSaveFileName(self, "DbContext exportieren", f"{efcore.pascal(self.modell.schema or 'App')}DbContext.cs",
+                                                  "C#-Datei (*.cs)")
+            if not pfad:
+                return None
+        code = efcore.dbcontext(self.modell, namespace="Daten", context=f"{efcore.pascal(self.modell.schema or 'App')}DbContext")
+        with open(pfad, "w", encoding="utf-8") as d:
+            d.write(code)
+        self.info.setText(f"DbContext gespeichert: {pfad}")
+        return pfad
+
+    def _modus_gewechselt(self, _i):
+        modus = self.modus.currentData() or "alle"
+        for k in self.karten.values():
+            k.setze_modus(modus)
+        if self.modell:
+            self.auto_anordnen()
 
     def _positionen_merken(self):
         if self.modell:
@@ -478,11 +968,15 @@ class DiagrammSeite(QWidget):
     def auto_anordnen(self):
         if not self.modell:
             return
-        pos = erm.auto_layout(self.modell, BREITE, hoehe=lambda t: KOPF_H + ZEILE_H * len(t.spalten) + 8)
+        pos = erm.auto_layout(self.modell, BREITE, hoehe=lambda t: self.karten[t.name].hoehe)
         for n, k in self.karten.items():
+            k.einrasten = False
             k.setPos(*pos[n])
+            k.einrasten = True
+        self._versatz_verteilen()
         self._positionen_merken()
-        self.ansicht.fitInView(self.szene.itemsBoundingRect().adjusted(-40, -40, 40, 40), Qt.KeepAspectRatio)
+        self.szene.setSceneRect(self.szene.itemsBoundingRect().adjusted(-200, -200, 400, 400))
+        self.ansicht.anpassen()
 
     # Bearbeiten → DDL-Vorschau
     def _markierte(self) -> str | None:

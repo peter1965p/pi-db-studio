@@ -45,8 +45,16 @@ def test_layout_und_positionen(db):
     m = _shop(db)
     e = erm.ebenen(m)
     assert e["kunden"] < e["bestellungen"] < e["bestellpositionen"]
-    pos = erm.auto_layout(m)
-    assert pos["kunden"][0] < pos["bestellungen"][0]
+    hoehe = lambda t: 40 + 22 * len(t.spalten)  # noqa: E731
+    pos = erm.auto_layout(m, 260, hoehe=hoehe)
+    assert set(pos) == set(m.tabellen)
+    rechtecke = {n: (x, y, x + 260, y + hoehe(m.tabellen[n])) for n, (x, y) in pos.items()}
+    namen = list(rechtecke)
+    for i, a in enumerate(namen):  # keine Überlappungen
+        for b in namen[i + 1:]:
+            ax1, ay1, ax2, ay2 = rechtecke[a]
+            bx1, by1, bx2, by2 = rechtecke[b]
+            assert ax2 <= bx1 or bx2 <= ax1 or ay2 <= by1 or by2 <= ay1, (a, b)
     erm.positionen_speichern("v1", "s", {"kunden": (10.0, 20.0)})
     assert erm.positionen_laden("v1", "s") == {"kunden": (10.0, 20.0)}
     assert erm.positionen_laden("v1", "anders") == {}

@@ -99,3 +99,18 @@ def setze_einstellungen(werte: dict) -> None:
 
 def verlauf_datei() -> Path:
     return ordner() / "verlauf.jsonl"
+
+
+def gemerktes_schema(v: dict) -> str | None:
+    """Zuletzt gewähltes Schema einer Verbindung (in einstellungen.json)."""
+    if not v or not v.get("id"):
+        return None
+    return (einstellungen().get("schemas") or {}).get(v["id"])
+
+
+def merke_schema(v: dict, schema: str) -> None:
+    if not v or not v.get("id") or not schema:
+        return
+    alle = dict(einstellungen().get("schemas") or {})
+    alle[v["id"]] = schema
+    setze_einstellungen({"schemas": alle})

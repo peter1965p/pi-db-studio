@@ -7,7 +7,7 @@ import json
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QKeySequence, QShortcut
-from PySide6.QtWidgets import (QFileDialog, QFrame, QMenu, QPlainTextEdit, QSplitter, QTabWidget, QTextBrowser,
+from PySide6.QtWidgets import (QComboBox, QFileDialog, QFrame, QMenu, QPlainTextEdit, QSplitter, QTabWidget, QTextBrowser,
                                QVBoxLayout, QWidget)
 
 from .. import austausch, ki, sqlschutz, treiber, verbindungen
@@ -43,7 +43,13 @@ class EditorSeite(QWidget):
         self.k_stopp.setEnabled(False)
         self.k_verlauf = knopf("Verlauf")
         self.k_verlauf.clicked.connect(self._verlauf_menue)
-        ov.addLayout(zeile(self.k_los, self.k_explain, self.k_stopp, None, self.k_verlauf, knopf("+ Tab", lambda: self.neuer_tab(""))))
+        self.schema_wahl = QComboBox()
+        self.schema_wahl.setToolTip("Arbeitsschema: unqualifizierte Tabellennamen beziehen sich darauf "
+                                    "(PostgreSQL search_path, MySQL USE, DuckDB SET schema)")
+        self.schema_wahl.setMinimumWidth(170)
+        self.schema_wahl.currentTextChanged.connect(self._schema_gewechselt)
+        ov.addLayout(zeile(self.k_los, self.k_explain, self.k_stopp, None, label("Schema", "gedimmt"), self.schema_wahl,
+                           self.k_verlauf, knopf("+ Tab", lambda: self.neuer_tab(""))))
         self.tabs = QTabWidget()
         self.tabs.setTabsClosable(True)
         self.tabs.setMovable(True)
@@ -104,6 +110,30 @@ class EditorSeite(QWidget):
 
     def editor(self) -> SqlEditor:
         return self.tabs.currentWidget()
+
+    def setze_schemas(self, schemas: list[str]):
+        self.schema_wahl.blockSignals(True)
+        self.schema_wahl.clear()
+        self.schema_wahl.addItems(schemas)
+        self.schema_wahl.blockSignals(False)
+
+    def schema_gewaehlt(self, schema: str, objekte: dict | None = None):
+        """Vom Fenster: Arbeitsschema hat gewechselt -> Auswahl + Autovervollständigung nachziehen."""
+        self.schema_wahl.blockSignals(True)
+        if self.schema_wahl.findText(schema) < 0:
+            self.schema_wahl.addItem(schema)
+        self.schema_wahl.setCurrentText(schema)
+        self.schema_wahl.blockSignals(False)
+        if objekte is not None:
+            self.namen_aktualisieren(schema, objekte)
+            return
+        t = self.h.t
+        if t:
+            arbeiter.starte(lambda: t.objekte(schema), lambda o: self.namen_aktualisieren(schema, o))
+
+    def _schema_gewechselt(self, schema: str):
+        if schema and self.h.t:
+            self.h.schema_gewaehlt(schema)
 
     def namen_aktualisieren(self, schema: str, objekte: dict):
         """Tabellen sofort, Spalten im Hintergrund – für die Autovervollständigung."""
@@ -365,7 +395,7 @@ class EditorSeite(QWidget):
                 meldung(self, "Kein SQL", "Erst eine Abfrage in den Editor schreiben oder markieren.")
                 return
         t = self.h.t
-        schema = self.h.explorer.schema or t.standard_schema()
+        schema = t.aktuelles_schema or self.h.explorer.schema or t.standard_schema()
         beispiele = 3 if self.ki_beispiele.isChecked() else 0
         self.ki_antwort.setMarkdown("_Denke nach …_")
         self.k_ki_uebernehmen.setEnabled(False)
