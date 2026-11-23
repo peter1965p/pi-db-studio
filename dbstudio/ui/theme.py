@@ -32,6 +32,7 @@ def stylesheet(t: dict) -> str:
     QMainWindow, #inhalt, QScrollArea, #scrollinhalt, QStackedWidget {{ background: {t['bg']}; border: none; }}
     #sidebar {{ background: {t['sidebar']}; border-right: 1px solid {t['rand']}; }}
     #gedimmt, #sidebarUnter {{ color: {t['gedimmt']}; }}
+    #hinweis {{ color: {t['warn']}; background: {t['warn_bg']}; border-radius: 6px; padding: 3px 10px; }}
     #navSektion {{ color: {t['gedimmt']}; font-size: 11px; font-weight: 700; padding: 12px 0 4px 14px; }}
     #navEintrag {{ background: transparent; border: none; border-radius: 8px; padding: 9px 14px; text-align: left; }}
     #navEintrag:hover {{ background: {t['aktiv']}; }}

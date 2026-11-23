@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QFontMetricsF, QImage, QPainter, QPainterPath, QPen
-from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QFrame, QLabel,
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QFrame, QHBoxLayout, QLabel, QMenu,
                                QPushButton,
                                QGraphicsItem, QGraphicsObject, QGraphicsPathItem, QGraphicsScene, QGraphicsView,
                                QHeaderView, QLineEdit, QPlainTextEdit, QTableWidget, QTableWidgetItem, QVBoxLayout,
@@ -492,8 +492,51 @@ class BeziehungsLinie(QGraphicsPathItem):
             pfad.lineTo(p + QPointF(0, dy))
 
 
+class ZoomLeiste(QFrame):
+    """„−“, Prozent (klickbar → Eingabe), „+“, „100 %“, „Anpassen“ – unten rechts über der Minikarte."""
+
+    def __init__(self, ansicht: "Ansicht"):
+        super().__init__(ansicht)
+        self.ansicht = ansicht
+        self.setObjectName("zoomleiste")
+        self.setStyleSheet(f"#zoomleiste {{ background: {theme.AKTUELL['karte']}; border: 1px solid {theme.AKTUELL['rand']};"
+                           " border-radius: 8px; } #zoomleiste QPushButton { padding: 3px 8px; min-width: 0; }")
+        h = QHBoxLayout(self)
+        h.setContentsMargins(6, 4, 6, 4)
+        h.setSpacing(4)
+        self.k_minus = QPushButton("−")
+        self.k_prozent = QPushButton("100 %")
+        self.k_plus = QPushButton("+")
+        self.k_100 = QPushButton("100 %")
+        self.k_anpassen = QPushButton("Anpassen")
+        self.k_minus.setToolTip("Verkleinern (−, Strg+Minus)")
+        self.k_plus.setToolTip("Vergrößern (+, Strg+Plus)")
+        self.k_prozent.setToolTip("Zoom eingeben")
+        self.k_100.setToolTip("Originalgröße (Strg+0)")
+        self.k_anpassen.setToolTip("Ganzes Diagramm einpassen")
+        self.k_minus.clicked.connect(lambda: ansicht.zoom_schritt(-1))
+        self.k_plus.clicked.connect(lambda: ansicht.zoom_schritt(1))
+        self.k_100.clicked.connect(lambda: ansicht.setze_zoom(1.0))
+        self.k_anpassen.clicked.connect(lambda: ansicht.anpassen(lesbar=False))
+        self.k_prozent.clicked.connect(self._eingabe)
+        for k in (self.k_minus, self.k_prozent, self.k_plus, self.k_100, self.k_anpassen):
+            k.setCursor(Qt.PointingHandCursor)
+            h.addWidget(k)
+        self.adjustSize()
+
+    def _eingabe(self):
+        from PySide6.QtWidgets import QInputDialog
+        wert, ok = QInputDialog.getInt(self, "Zoom", "Zoom in Prozent (10–400):", round(self.ansicht.zoom() * 100),
+                                       int(ZOOM_MIN * 100), int(ZOOM_MAX * 100), 10)
+        if ok:
+            self.ansicht.setze_zoom(wert / 100)
+
+    def aktualisieren(self):
+        self.k_prozent.setText(f"{round(self.ansicht.zoom() * 100)} %")
+
+
 class Minikarte(QGraphicsView):
-    """Übersicht unten rechts; Rechteck = sichtbarer Ausschnitt, Klick springt dorthin."""
+    """Übersicht unten rechts; dünner orangener Rahmen = sichtbarer Ausschnitt, Klick/Ziehen verschiebt die Ansicht."""
 
     def __init__(self, haupt: "Ansicht"):
         super().__init__(haupt.scene(), haupt)
@@ -503,6 +546,7 @@ class Minikarte(QGraphicsView):
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setRenderHints(QPainter.Antialiasing)
+        self.setCursor(Qt.PointingHandCursor)
         self.setObjectName("minikarte")
         self.setStyleSheet(f"#minikarte {{ background: {theme.AKTUELL['feld']}; border: 1px solid {theme.AKTUELL['rand']};"
                            " border-radius: 8px; }")
@@ -510,27 +554,37 @@ class Minikarte(QGraphicsView):
     def anpassen(self):
         r = self.scene().itemsBoundingRect()
         if not r.isEmpty():
-            self.fitInView(r.adjusted(-40, -40, 40, 40), Qt.KeepAspectRatio)
+            self.setSceneRect(r.adjusted(-30, -30, 30, 30))
+            self.fitInView(r.adjusted(-30, -30, 30, 30), Qt.KeepAspectRatio)
         self.viewport().update()
 
     def drawForeground(self, p: QPainter, rect):
         sicht = self.haupt.mapToScene(self.haupt.viewport().rect()).boundingRect()
-        p.setPen(QPen(_farbe("akzent"), 0))
-        farbe = _farbe("akzent")
-        farbe.setAlpha(40)
-        p.setBrush(farbe)
+        stift = QPen(_farbe("akzent"), 1.5)
+        stift.setCosmetic(True)
+        p.setPen(stift)
+        p.setBrush(Qt.NoBrush)
         p.drawRect(sicht)
 
     def mousePressEvent(self, e):
         self.haupt.centerOn(self.mapToScene(e.position().toPoint()))
+        self.viewport().update()
 
     def mouseMoveEvent(self, e):
         if e.buttons():
             self.haupt.centerOn(self.mapToScene(e.position().toPoint()))
+            self.viewport().update()
+
+    def wheelEvent(self, e):
+        e.ignore()
+
+
+ZOOM_MIN, ZOOM_MAX, ZOOM_LESBAR = 0.10, 4.0, 0.60
 
 
 class Ansicht(QGraphicsView):
-    """Strg+Mausrad zoomt, Ziehen auf freier Fläche verschiebt; Minikarte unten rechts."""
+    """Mausrad zoomt um den Mauszeiger, Shift+Mausrad scrollt waagerecht, Ziehen auf freier Fläche
+    (oder Leertaste/mittlere Maustaste) verschiebt. Zoomleiste + Minikarte unten rechts."""
 
     def __init__(self, szene):
         super().__init__(szene)
@@ -538,41 +592,135 @@ class Ansicht(QGraphicsView):
         self.setDragMode(QGraphicsView.ScrollHandDrag)
         self.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
         self.setViewportUpdateMode(QGraphicsView.BoundingRectViewportUpdate)
+        self._pan_start = None
+        self._leertaste = False
         self.minikarte = Minikarte(self)
+        self.zoomleiste = ZoomLeiste(self)
         self.horizontalScrollBar().valueChanged.connect(lambda _: self.minikarte.viewport().update())
         self.verticalScrollBar().valueChanged.connect(lambda _: self.minikarte.viewport().update())
 
     def resizeEvent(self, e):
         super().resizeEvent(e)
-        m = self.minikarte
-        m.move(self.viewport().width() - m.width() - 12, self.viewport().height() - m.height() - 12)
+        self._platzieren()
+
+    def _platzieren(self):
+        m, z = self.minikarte, self.zoomleiste
+        vw, vh = self.viewport().width(), self.viewport().height()
+        m.move(vw - m.width() - 12, vh - m.height() - 12)
+        z.adjustSize()
+        z.move(vw - z.width() - 12, vh - m.height() - z.height() - 18)
         m.viewport().update()
         leg = getattr(self, "legende", None)
         if leg is not None:
             leg.adjustSize()
-            leg.move(self.viewport().width() - leg.width() - 12, 12)
+            leg.move(vw - leg.width() - 12, 12)
+
+    # Zoom
+    def zoom(self) -> float:
+        return self.transform().m11()
+
+    def setze_zoom(self, wert: float, um_maus: bool = False):
+        wert = max(ZOOM_MIN, min(ZOOM_MAX, wert))
+        anker = self.transformationAnchor()
+        if not um_maus:
+            self.setTransformationAnchor(QGraphicsView.AnchorViewCenter)
+        faktor = wert / self.zoom()
+        self.scale(faktor, faktor)
+        self.setTransformationAnchor(anker)
+        self.zoomleiste.aktualisieren()
+        self.minikarte.viewport().update()
+
+    def zoom_schritt(self, richtung: int, um_maus: bool = False):
+        self.setze_zoom(self.zoom() * (1.2 if richtung > 0 else 1 / 1.2), um_maus)
 
     def wheelEvent(self, e):
-        if e.modifiers() & Qt.ControlModifier:
-            faktor = 1.15 if e.angleDelta().y() > 0 else 1 / 1.15
-            neu = self.transform().m11() * faktor
-            if 0.1 < neu < 4:
-                self.scale(faktor, faktor)
-                self.minikarte.viewport().update()
+        d = e.angleDelta()
+        if e.modifiers() & Qt.ShiftModifier:  # waagerecht scrollen
+            delta = d.y() or d.x()
+            self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() - delta)
+            return
+        if d.y():
+            self.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
+            self.setze_zoom(self.zoom() * (1.15 ** (d.y() / 120)), um_maus=True)
             return
         super().wheelEvent(e)
 
-    def anpassen(self):
+    def keyPressEvent(self, e):
+        k, mod = e.key(), e.modifiers()
+        if k in (Qt.Key_Plus, Qt.Key_Equal):
+            self.zoom_schritt(1)
+        elif k == Qt.Key_Minus:
+            self.zoom_schritt(-1)
+        elif k == Qt.Key_0 and mod & Qt.ControlModifier:
+            self.setze_zoom(1.0)
+        elif k == Qt.Key_Space and not e.isAutoRepeat():
+            self._leertaste = True
+            self.viewport().setCursor(Qt.OpenHandCursor)
+        else:
+            super().keyPressEvent(e)
+
+    def keyReleaseEvent(self, e):
+        if e.key() == Qt.Key_Space and not e.isAutoRepeat():
+            self._leertaste = False
+            self.viewport().unsetCursor()
+        super().keyReleaseEvent(e)
+
+    # Verschieben mit mittlerer Maustaste oder Leertaste+Ziehen (auch über Karten)
+    def mousePressEvent(self, e):
+        if e.button() == Qt.MiddleButton or (self._leertaste and e.button() == Qt.LeftButton):
+            self._pan_start = e.position()
+            self.viewport().setCursor(Qt.ClosedHandCursor)
+            e.accept()
+            return
+        super().mousePressEvent(e)
+
+    def mouseMoveEvent(self, e):
+        if self._pan_start is not None:
+            d = e.position() - self._pan_start
+            self._pan_start = e.position()
+            self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() - int(d.x()))
+            self.verticalScrollBar().setValue(self.verticalScrollBar().value() - int(d.y()))
+            return
+        super().mouseMoveEvent(e)
+
+    def mouseReleaseEvent(self, e):
+        if self._pan_start is not None:
+            self._pan_start = None
+            self.viewport().setCursor(Qt.OpenHandCursor if self._leertaste else Qt.ArrowCursor)
+            return
+        super().mouseReleaseEvent(e)
+
+    def szene_rahmen(self):
+        """sceneRect dynamisch: Inhalt + großzügiger Rand zum Verschieben (nicht riesig)."""
         r = self.scene().itemsBoundingRect()
         if not r.isEmpty():
-            self.fitInView(r.adjusted(-40, -150, 40, 170), Qt.KeepAspectRatio)  # Platz für Legende/Minikarte
-            if self.transform().m11() > 1.2:
-                self.resetTransform()
-                self.centerOn(r.center())
-        self.minikarte.anpassen()
+            self.scene().setSceneRect(r.adjusted(-300, -300, 300, 300))
 
-    def zoom(self) -> float:
-        return self.transform().m11()
+    def anpassen(self, lesbar: bool = False, fokus: QPointF | None = None):
+        """Inhalt einpassen (kleiner Rand). lesbar=True: nicht unter 60 % – dann lieber scrollen (Start oben links bzw. fokus)."""
+        self.szene_rahmen()
+        r = self.scene().itemsBoundingRect()
+        if r.isEmpty():
+            return
+        rahmen = r.adjusted(-24, -24, 24, 24)
+        self.resetTransform()
+        sx = self.viewport().width() / max(1.0, rahmen.width())
+        sy = self.viewport().height() / max(1.0, rahmen.height())
+        s = max(ZOOM_MIN, min(1.0, sx, sy))
+        if lesbar and s < ZOOM_LESBAR:
+            s = ZOOM_LESBAR
+            self.scale(s, s)
+            if fokus is not None:
+                self.centerOn(fokus)
+            else:
+                sicht_w = self.viewport().width() / s
+                sicht_h = self.viewport().height() / s
+                self.centerOn(QPointF(rahmen.left() + sicht_w / 2, rahmen.top() + sicht_h / 2))
+        else:
+            self.scale(s, s)
+            self.centerOn(rahmen.center())
+        self.zoomleiste.aktualisieren()
+        self.minikarte.anpassen()
 
 
 class Legende(QFrame):
@@ -612,8 +760,8 @@ class Legende(QFrame):
         self.knopf.setText("Legende ▾" if self.offen else "Legende ▸")
         self.adjustSize()
         e = self.parentWidget()
-        if e is not None:
-            self.move(e.viewport().width() - self.width() - 12, 12)
+        if e is not None and hasattr(e, "_platzieren"):
+            e._platzieren()
 
 
 # --- Dialoge --------------------------------------------------------------------------------------------------------
@@ -758,18 +906,18 @@ class DiagrammSeite(QWidget):
         self.linien: list[BeziehungsLinie] = []
         lay = leiste()
         self.setLayout(lay)
-        self.kopf = Kopf("Diagramm", "Tabellen und Beziehungen. Kopf ziehen = verschieben, Spalte auf Spalte ziehen = "
-                                     "Beziehung, Strg+Mausrad = Zoom.")
+        self.kopf = Kopf("Diagramm", "Mausrad = Zoom um den Zeiger · Ziehen auf freier Fläche, Leertaste+Ziehen oder "
+                                     "mittlere Maustaste = verschieben · Shift+Mausrad = waagerecht · Kopf ziehen = Tabelle "
+                                     "verschieben · Spalte auf Spalte ziehen = Beziehung.")
         lay.addWidget(self.kopf)
         self.schema = QComboBox()
         self.schema.setMinimumWidth(160)
         self.schema.activated.connect(lambda _: self.laden())
-        self.k_neu = knopf("+ Tabelle", self.tabelle_neu, "primaer")
-        self.k_spalte = knopf("+ Spalte", self.spalte_neu, tipp="Spalte zur markierten Tabelle hinzufügen")
-        self.k_ki = knopf("Beziehungen vorschlagen", self.vorschlagen, "zweit",
+        self.k_neu = knopf("＋ Tabelle", self.tabelle_neu, "primaer")
+        self.k_spalte = knopf("＋ Spalte", self.spalte_neu, tipp="Spalte zur markierten Tabelle hinzufügen")
+        self.k_ki = knopf("✦ Beziehungen vorschlagen", self.vorschlagen, "zweit",
                           "Fehlende Fremdschlüssel anhand von Namen und Typen – nur das Schema geht an die KI")
-        export = knopf("Export …")
-        from PySide6.QtWidgets import QMenu
+        export = knopf("⇩ Export …")
         m = QMenu(export)
         m.addAction("PNG …", lambda: self.exportieren("png"))
         m.addAction("SVG …", lambda: self.exportieren("svg"))
@@ -786,10 +934,27 @@ class DiagrammSeite(QWidget):
         self.stil.addItem("EF-Core-Stil", "ef")
         self.stil.setToolTip("EF-Core-Stil: Entitäten mit C#-Typen und Navigationen wie in EF Core Power Tools")
         self.stil.activated.connect(lambda _: self._stil_gewechselt())
-        lay.addLayout(zeile(label("Schema", "gedimmt"), self.schema, knopf("Aktualisieren", self.laden),
-                            knopf("Automatisch anordnen", self.auto_anordnen),
-                            knopf("An Fenster anpassen", lambda: self.ansicht.anpassen()), self.modus, self.stil,
-                            self.k_neu, self.k_spalte, self.k_ki, export, None, self.info, dehnen=False))
+        self.k_laden = knopf("⟳", self.laden, tipp="Schema neu laden")
+        self.k_anordnen = knopf("▦ Anordnen", self.auto_anordnen, tipp="Automatisch anordnen")
+        self.k_mehr = knopf("…", tipp="Weitere Aktionen")
+        self.k_mehr.setMenu(QMenu(self.k_mehr))
+        self.k_mehr.menu().aboutToShow.connect(self._ueberlauf_menue)
+        self.k_export = export
+        trenner = lambda: label("│", "gedimmt")  # noqa: E731
+        # Gruppen: Daten | Ansicht | Bearbeiten | Ausgabe; Knöpfe am Ende wandern bei Platzmangel ins „…“-Menü
+        self._ueberlauf = [(self.k_ki, "✦ Beziehungen vorschlagen", self.vorschlagen),
+                           (self.k_spalte, "＋ Spalte", self.spalte_neu), (self.k_neu, "＋ Tabelle", self.tabelle_neu),
+                           (self.k_anordnen, "▦ Automatisch anordnen", self.auto_anordnen)]
+        self.leiste = zeile(label("Schema", "gedimmt"), self.schema, self.k_laden, trenner(), self.modus, self.stil,
+                            self.k_anordnen, trenner(), self.k_neu, self.k_spalte, self.k_ki, trenner(), export,
+                            self.k_mehr, None, dehnen=False)
+        lay.addLayout(self.leiste)
+        # Hinweiszeile unter der Leiste (ausblendbar) + Zähler rechts
+        self.hinweis = label("", "hinweis")
+        self.k_hinweis_weg = knopf("×", lambda: self._hinweis_zeigen(""), tipp="Hinweis ausblenden")
+        self.k_hinweis_weg.setFixedWidth(28)
+        lay.addLayout(zeile(self.hinweis, self.k_hinweis_weg, None, self.info, dehnen=False))
+        self._hinweis_zeigen("")
         self.szene = QGraphicsScene(self)
         self.szene.selectionChanged.connect(self._fokus_aktualisieren)
         self.ansicht = Ansicht(self.szene)
@@ -797,7 +962,41 @@ class DiagrammSeite(QWidget):
         self.ansicht.legende = self.legende
         self._schwebend = ""
         lay.addWidget(self.ansicht, 1)
+        from PySide6.QtGui import QKeySequence, QShortcut
+        for taste, fn in (("Ctrl++", lambda: self.ansicht.zoom_schritt(1)), ("Ctrl+=", lambda: self.ansicht.zoom_schritt(1)),
+                          ("Ctrl+-", lambda: self.ansicht.zoom_schritt(-1)), ("Ctrl+0", lambda: self.ansicht.setze_zoom(1.0))):
+            QShortcut(QKeySequence(taste), self, fn)
         self._knoepfe()
+
+    def _hinweis_zeigen(self, text: str):
+        self.hinweis.setText(text)
+        self.hinweis.setVisible(bool(text))
+        self.k_hinweis_weg.setVisible(bool(text))
+
+    def _ueberlauf_menue(self):
+        m = self.k_mehr.menu()
+        m.clear()
+        for w, text, fn in reversed(self._ueberlauf):
+            if not w.isVisible():
+                a = m.addAction(text, fn)
+                a.setEnabled(w.isEnabled())
+        if m.isEmpty():
+            m.addAction("Alles sichtbar").setEnabled(False)
+
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        self._leiste_einpassen()
+
+    def _leiste_einpassen(self):
+        """Knöpfe von hinten ausblenden, bis die Leiste passt; ausgeblendete stehen im „…“-Menü."""
+        for w, _, _ in self._ueberlauf:
+            w.setVisible(True)
+        verfuegbar = self.width() - 40
+        for w, _, _ in self._ueberlauf:
+            if self.leiste.sizeHint().width() <= verfuegbar:
+                break
+            w.setVisible(False)
+        self.k_mehr.setVisible(any(not w.isVisible() for w, _, _ in self._ueberlauf))
 
     # Verbindung
     def _knoepfe(self):
@@ -884,12 +1083,14 @@ class DiagrammSeite(QWidget):
                 self.szene.addItem(lin)
                 self.linien.append(lin)
         self._versatz_verteilen()
-        self.szene.setSceneRect(self.szene.itemsBoundingRect().adjusted(-200, -200, 400, 400))
-        QTimer.singleShot(0, self.ansicht.anpassen)
+        hub = max(self.karten, key=lambda n: sum(1 for f in m.fks if f.ziel == n), default=None)
+        fokus = self.karten[hub].rechteck().center() if hub and any(f.ziel == hub for f in m.fks) else None
+        QTimer.singleShot(0, lambda: self.ansicht.anpassen(lesbar=True, fokus=fokus))
         nm = len(m.n_zu_m())
         hinweis, self._hinweis = getattr(self, "_hinweis", ""), ""
-        self.info.setText((hinweis + "  ·  " if hinweis else "")
-                          + f"{len(m.tabellen)} Tabellen · {len(m.fks)} Beziehungen" + (f" · {nm} n:m" if nm else ""))
+        if hinweis:
+            self._hinweis_zeigen(hinweis)
+        self.info.setText(f"{len(m.tabellen)} Tabellen · {len(m.fks)} Beziehungen" + (f" · {nm} n:m" if nm else ""))
 
     def _linien_nachziehen(self):
         for lin in self.linien:
@@ -962,6 +1163,8 @@ class DiagrammSeite(QWidget):
 
     def _positionen_merken(self):
         if self.modell:
+            self.ansicht.szene_rahmen()
+            self.ansicht.minikarte.anpassen()
             erm.positionen_speichern(self.h.cfg.get("id", ""), self.modell.schema,
                                      {n: (k.pos().x(), k.pos().y()) for n, k in self.karten.items()})
 
@@ -975,8 +1178,7 @@ class DiagrammSeite(QWidget):
             k.einrasten = True
         self._versatz_verteilen()
         self._positionen_merken()
-        self.szene.setSceneRect(self.szene.itemsBoundingRect().adjusted(-200, -200, 400, 400))
-        self.ansicht.anpassen()
+        self.ansicht.anpassen(lesbar=True)
 
     # Bearbeiten → DDL-Vorschau
     def _markierte(self) -> str | None:

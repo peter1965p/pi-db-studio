@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.2 – 2026-11-23
+
+- **Zoom wie in gängigen Werkzeugen:** Mausrad zoomt direkt um den Mauszeiger (10–400 %), Shift+Mausrad scrollt
+  waagerecht, Verschieben per Ziehen auf freier Fläche, Leertaste+Ziehen oder mittlerer Maustaste.
+  Tasten +/− und Strg+Plus/Minus/0. **Zoomleiste** unten rechts: „−“, Prozent (klicken → Eingabe), „+“, „100 %“, „Anpassen“.
+- **Anpassen repariert:** passt auf den tatsächlichen Inhalt (kleiner Rand), Szenengröße wächst dynamisch mit.
+  Beim Öffnen nie unter 60 % (Schrift bleibt lesbar) – bei großen Schemas lieber scrollen, Start bei der zentralen Tabelle.
+- **Gespeicherte Positionen aus 0.2.0** (mit unverbundenen Tabellen weit unten) werden ignoriert und neu angeordnet;
+  unverbundene Tabellen stehen kompakt rechts neben dem verbundenen Block.
+- **Minikarte:** Sichtbereich als dünner orangener Rahmen; Klicken/Ziehen verschiebt die Ansicht.
+- **Werkzeugleiste:** Gruppen mit Symbolen (⟳ | Ansicht | ▦ Anordnen | ＋ Tabelle ＋ Spalte ✦ KI | ⇩ Export); bei Platzmangel
+  wandern Knöpfe ins „…“-Menü. Hinweise („„public“ ist leer …“) stehen in einer eigenen, ausblendbaren Zeile darunter.
+
 ## 0.2.1 – 2026-11-23
 
 - **Schema-Automatik:** Ist das Standardschema (public/main/dbo) leer, öffnen Objektbaum und Diagramm das Schema mit den

@@ -316,6 +316,9 @@ def auto_layout(m: Modell, breite: float = 260, abstand_x: float = 120, abstand_
     return pos
 
 
+LAYOUT_VERSION = 2  # Positionen aus älterem Layout werden ignoriert (neu angeordnet)
+
+
 def _positions_datei():
     return verbindungen.ordner() / "diagramme.json"
 
@@ -325,7 +328,7 @@ def positionen_laden(verbindung_id: str, schema: str) -> dict[str, tuple[float, 
         alle = json.loads(_positions_datei().read_text(encoding="utf-8"))
     except (FileNotFoundError, ValueError):
         return {}
-    return {k: tuple(v) for k, v in alle.get(f"{verbindung_id}|{schema}", {}).items()}
+    return {k: tuple(v) for k, v in alle.get(f"{verbindung_id}|{schema}|{LAYOUT_VERSION}", {}).items()}
 
 
 def positionen_speichern(verbindung_id: str, schema: str, pos: dict[str, tuple[float, float]]) -> None:
@@ -334,7 +337,7 @@ def positionen_speichern(verbindung_id: str, schema: str, pos: dict[str, tuple[f
         alle = json.loads(d.read_text(encoding="utf-8"))
     except (FileNotFoundError, ValueError):
         alle = {}
-    alle[f"{verbindung_id}|{schema}"] = {k: [round(x, 1), round(y, 1)] for k, (x, y) in pos.items()}
+    alle[f"{verbindung_id}|{schema}|{LAYOUT_VERSION}"] = {k: [round(x, 1), round(y, 1)] for k, (x, y) in pos.items()}
     d.write_text(json.dumps(alle, ensure_ascii=False, indent=1), encoding="utf-8")
     d.chmod(0o600)
 
