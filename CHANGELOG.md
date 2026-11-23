@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.2 – 2026-11-23
+
+- **KI-Anbieter „Claude (Claude Code auf dem PC)“ für die Web-Version:** KI-Brücke `python -m dbstudio.claude_bruecke`
+  als User-Dienst auf dem PC (192.168.178.86:8791, `deploy/claude-bruecke.service`). Nimmt nur Anfragen von CT 104
+  (192.168.178.215) mit Token an (PC: Schlüsselbund `db-studio`/`claude-bruecke`, CT 104: `/etc/dbstudio-web.env`),
+  ruft `claude -p` ohne Werkzeuge auf, eine Anfrage zur Zeit, Zeitlimit 180 s. Kein API-Schlüssel nötig.
+- Desktop nutzt wie bisher direkt `claude -p` („Claude (Claude Code, Abo)“).
+- Web: Ollama-Adresse auf den PC gestellt (http://192.168.178.86:11434).
+
 ## 0.3.1 – 2026-11-23
 
 - **MySQL/MariaDB und SQL Server** jetzt mit Server-Tests (Treiber-, Diagramm- und Austauschtests gegen CT 105);

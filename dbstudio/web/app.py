@@ -525,6 +525,8 @@ def erstelle_app(speicher: Speicher | None = None, cookie_secure: bool = True) -
         anbieter = [("claude-api", "Claude (API-Schlüssel)" + ("" if e["hat_api_schluessel"] else " – Schlüssel fehlt"))]
         if ki.claude_pfad():
             anbieter.append(("claude-code", "Claude (Claude Code)"))
+        if all(ki.bruecke_konfig()):
+            anbieter.append(("claude-bruecke", "Claude (Claude Code auf dem PC)"))
         anbieter += [(f"ollama:{m}", f"Lokal: {m}") for m in ki.ollama_modelle(e["ollama_url"])]
         return {**e, "anbieter": [{"id": a, "name": n} for a, n in anbieter]}
 

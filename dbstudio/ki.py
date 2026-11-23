@@ -4,6 +4,7 @@ Anbieter (wie im Job Agent):
 - „claude-api“: Anthropic-API, Schlüssel im Keyring (Dienst „db-studio“, Eintrag „anthropic-api“)
 - „claude-code“: das angemeldete Claude Code auf diesem Rechner (Abo statt API-Schlüssel)
 - „ollama:<modell>“: lokales Modell, nichts verlässt den Rechner
+- „claude-bruecke“: (nur Web) Claude Code auf dem PC über die KI-Brücke (dbstudio.claude_bruecke, Token-geschützt)
 
 An die KI geht standardmäßig nur das Schema (Tabellen, Spalten, Typen). Datenzeilen nur, wenn der Schalter
 „Beispielzeilen mitsenden“ an ist. Erzeugtes SQL wird nie automatisch ausgeführt.
@@ -12,6 +13,7 @@ An die KI geht standardmäßig nur das Schema (Tabellen, Spalten, Typen). Datenz
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -190,12 +192,37 @@ def _ollama(modell: str, nutzer: str, url: str = OLLAMA_URL) -> str:
     return r.json().get("message", {}).get("content", "").strip()
 
 
+def bruecke_konfig() -> tuple[str, str]:
+    """Adresse und Token der Claude-Code-Brücke (Web: aus der Geheimnisdatei des Dienstes)."""
+    return os.environ.get("DBSTUDIO_CLAUDE_BRUECKE_URL", "").rstrip("/"), os.environ.get("DBSTUDIO_CLAUDE_BRUECKE_TOKEN", "")
+
+
+def _claude_bruecke(modell: str, nutzer: str) -> str:
+    url, token = bruecke_konfig()
+    if not url or not token:
+        raise KIFehler("Claude-Code-Brücke ist nicht eingerichtet.")
+    try:
+        r = httpx.post(f"{url}/frage", timeout=ZEIT + 15, headers={"X-Bruecke-Token": token},
+                       json={"prompt": nutzer, "modell": modell or ""})
+    except httpx.HTTPError as e:
+        raise KIFehler("Claude-Code-Brücke auf dem PC nicht erreichbar (PC aus oder Dienst gestoppt?).") from e
+    if r.status_code == 200:
+        return str(r.json().get("antwort", "")).strip()
+    try:
+        meldung = r.json().get("fehler", "")
+    except ValueError:
+        meldung = ""
+    raise KIFehler(meldung or f"Claude-Code-Brücke meldet {r.status_code}.")
+
+
 def frage(anbieter: str, art: str, kontext: str, modell: str = "", **werte) -> str:
     nutzer = _aufgabe(art, kontext, **werte)
     if anbieter == "claude-api":
         return _claude_api(modell or STANDARD_MODELL, nutzer)
     if anbieter == "claude-code":
         return _claude_code(modell, nutzer)
+    if anbieter == "claude-bruecke":
+        return _claude_bruecke(modell, nutzer)
     if anbieter.startswith("ollama:"):
         return _ollama(anbieter.split(":", 1)[1], nutzer)
     raise KIFehler("Kein KI-Anbieter gewählt (Einstellungen → KI).")

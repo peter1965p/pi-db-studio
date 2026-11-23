@@ -1,0 +1,14 @@
+# User-Dienst auf dem PC: install -m 644 deploy/claude-bruecke.service ~/.config/systemd/user/
+#                         systemctl --user enable --now claude-bruecke
+[Unit]
+Description=Pi DB Studio – KI-Brücke zu Claude Code (für die Web-Version in CT 104)
+After=network-online.target
+
+[Service]
+WorkingDirectory=%h/Dev/db-studio
+ExecStart=%h/Dev/db-studio/venv/bin/python -m dbstudio.claude_bruecke
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target
