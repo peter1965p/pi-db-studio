@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.1 – 2026-11-23
+
+- **MySQL/MariaDB und SQL Server** jetzt mit Server-Tests (Treiber-, Diagramm- und Austauschtests gegen CT 105);
+  Test-DB wird vor/nach jedem Test geleert, Passwörter nur aus Umgebung oder Schlüsselbund.
+- **Abbrechen repariert:** SQL Server bricht jetzt wirklich ab (dbcancel an der _mssql-Verbindung statt des fehlenden
+  `cancel()`), MySQL/MariaDB baut die KILL-QUERY-Verbindung mit derselben TLS-Einstellung auf und meldet
+  „Abfrage abgebrochen“, auch wenn der Server die Anweisung still beendet.
+
 ## 0.3.0 – 2026-11-23
 
 - **Web-Oberfläche** (`python -m dbstudio.web`, Paket `dbstudio/web/`): FastAPI + statisches Frontend ohne Build,

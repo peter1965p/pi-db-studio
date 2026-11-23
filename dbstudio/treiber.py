@@ -255,16 +255,24 @@ class Treiber:
     def _cursor(self):
         return self.conn.cursor()
 
+    _abgebrochen = False
+
     def abfrage(self, sql: str, params=None, limit: int = 1000) -> Ergebnis:
         start = time.perf_counter()
         with self.sperre:
+            self._abgebrochen = False
             cur = self._cursor()
             try:
                 if params is None:
                     cur.execute(sql)
                 else:
                     cur.execute(sql, params)
+                if self._abgebrochen:
+                    # MariaDB beendet z. B. BENCHMARK/SLEEP nach KILL QUERY still mit einem Ergebnis
+                    raise DBFehler("Abfrage abgebrochen")
             except Exception as e:
+                if self._abgebrochen and not isinstance(e, DBFehler):
+                    e = DBFehler("Abfrage abgebrochen")
                 try:
                     cur.close()
                 except Exception:
@@ -614,7 +622,7 @@ class MySQL(Treiber):
     def verbinden(self, cfg, passwort=None):
         import pymysql
         ssl = {"ssl": {}} if cfg.get("sslmode") in ("require", "verify-ca", "verify-full") else {}
-        self._cfg, self._pw = cfg, passwort
+        self._cfg, self._pw, self._ssl = cfg, passwort, ssl
         try:
             self.conn = pymysql.connect(host=cfg.get("host") or "localhost", port=int(cfg.get("port") or 3306),
                                         user=cfg.get("benutzer") or None, password=passwort or "",
@@ -679,9 +687,11 @@ class MySQL(Treiber):
         try:
             tid = self.conn.thread_id()
             k = pymysql.connect(host=self._cfg.get("host") or "localhost", port=int(self._cfg.get("port") or 3306),
-                                user=self._cfg.get("benutzer") or None, password=self._pw or "", connect_timeout=5)
+                                user=self._cfg.get("benutzer") or None, password=self._pw or "", connect_timeout=5,
+                                **self._ssl)
             with k.cursor() as c:
                 c.execute(f"KILL QUERY {int(tid)}")
+            self._abgebrochen = True
             k.close()
         except Exception:
             pass
@@ -779,8 +789,10 @@ class SQLServer(Treiber):
         return Ergebnis(spalten, zeilen)
 
     def abbrechen(self):
+        # Die DB-API-Verbindung von pymssql hat kein cancel(); dbcancel liegt an der _mssql-Verbindung.
         try:
-            self.conn.cancel()
+            self.conn._conn.cancel()
+            self._abgebrochen = True
         except Exception:
             pass
 

@@ -86,6 +86,8 @@ def test_fk_anlegen_und_ausfuehren(db):
 
 
 def test_fehler_rollt_zurueck(db):
+    if db.art == "mysql":
+        pytest.skip("MySQL/MariaDB committen DDL implizit – kein Zurückrollen möglich (die Vorschau warnt davor)")
     m = _shop(db)
     with pytest.raises(Exception):
         erm.ausfuehren(db, [erm.ddl_tabelle_neu(db.art, m.schema, "neu_t", [Spalte("a", "text")])[0],

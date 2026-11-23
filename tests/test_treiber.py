@@ -12,7 +12,7 @@ from .conftest import schema_von
 def _anlegen(t):
     s = schema_von(t)
     voll = t.voll(s if t.art == "postgresql" else None, "kunden")
-    t.abfrage(f"CREATE TABLE {voll} (id INTEGER PRIMARY KEY, name VARCHAR(100) NOT NULL, umsatz DOUBLE PRECISION, aktiv BOOLEAN)"
+    t.abfrage(f"CREATE TABLE {voll} (id INTEGER PRIMARY KEY, name VARCHAR(100) NOT NULL, umsatz DOUBLE PRECISION, aktiv {'BIT' if t.art == 'mssql' else 'BOOLEAN'})"
               if t.art != "sqlite" else f"CREATE TABLE {voll} (id INTEGER PRIMARY KEY, name TEXT NOT NULL, umsatz REAL, aktiv BOOLEAN)")
     sql = t.einfuegen_sql(s if t.art == "postgresql" else None, "kunden", ["id", "name", "umsatz", "aktiv"])
     t.ausfuehren_viele(sql, [(i, f"Firma {i}", i * 1.5, i % 2 == 0) for i in range(1, 251)])
@@ -22,7 +22,7 @@ def _anlegen(t):
 def test_metadaten(db):
     s = _anlegen(db)
     db.abfrage(f"CREATE VIEW {db.voll(s if db.art == 'postgresql' else None, 'v_aktiv')} AS SELECT * FROM "
-               f"{db.voll(s if db.art == 'postgresql' else None, 'kunden')} WHERE aktiv")
+               f"{db.voll(s if db.art == 'postgresql' else None, 'kunden')} WHERE {'aktiv = 1' if db.art == 'mssql' else 'aktiv'}")
     db.abfrage(f"CREATE INDEX ix_name ON {db.voll(s if db.art == 'postgresql' else None, 'kunden')} (name)")
     assert s in db.schemas()
     o = db.objekte(s)
@@ -82,6 +82,10 @@ def test_abbrechen(db):
         sql = "SELECT pg_sleep(20)"
     elif db.art == "duckdb":
         sql = "SELECT count(*) FROM range(10000000000) a"
+    elif db.art == "mysql":
+        sql = "SELECT BENCHMARK(100000000000, MD5('x'))"  # KILL QUERY bricht das mit Fehler ab (SLEEP würde still 1 liefern)
+    elif db.art == "mssql":
+        sql = "WAITFOR DELAY '00:00:20'"
     else:
         sql = "WITH RECURSIVE r(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM r) SELECT count(*) FROM r"
     fehler = []

@@ -51,7 +51,10 @@ venv/bin/python tests/pg_testdb_anlegen.py            # einmalig: Postgres-Test-
 ```
 
 Postgres-Tests laufen gegen `dbstudio_test` (Host per `DBSTUDIO_TEST_PG_HOST`) und werden übersprungen, wenn die
-Datenbank nicht erreichbar ist. MySQL und SQL Server haben in 0.1 noch keine Server-Tests.
+Datenbank nicht erreichbar ist. MySQL/MariaDB- und SQL-Server-Tests laufen gegen `dbstudio_test` auf CT 105
+(`DBSTUDIO_TEST_MY_HOST` / `DBSTUDIO_TEST_MS_HOST`, Standard 192.168.178.216, Benutzer `dbstudio`); Passwörter kommen
+aus `DBSTUDIO_TEST_MY_PASSWORT` / `DBSTUDIO_TEST_MS_PASSWORT` oder dem Schlüsselbund (`db-studio`,
+`mysql:dbstudio@<host>` bzw. `mssql:dbstudio@<host>`), sonst werden sie übersprungen.
 
 ## Screenshots
 

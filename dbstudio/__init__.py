@@ -1,3 +1,3 @@
 """Pi DB Studio: schlankes Datenbank-Werkzeug mit KI-Assistent."""
 
-__version__ = "0.3.0"
+__version__ = "0.3.1"
