@@ -1,5 +1,11 @@
 # Changelog
 
+## Unveröffentlicht
+
+- **KI-Brücke:** optionale Felder `system` (eigener Systemprompt) und `json_schema` (strukturierte Ausgabe) für den
+  Job Agent Web (CT 106). Ohne diese Felder verhält sich die Brücke wie bisher. Erlaubte Adressen per Drop-in
+  `~/.config/systemd/user/claude-bruecke.service.d/jobagent.conf` (192.168.178.215, 192.168.178.217).
+
 ## 0.3.3 – 2026-11-23
 
 - **ER-Diagramm (Desktop und Web):** Zoomleiste per Griff links (⋮⋮) frei verschiebbar, bleibt im Sichtbereich,

@@ -58,3 +58,26 @@ def test_ohne_konfig(monkeypatch):
     monkeypatch.delenv("DBSTUDIO_CLAUDE_BRUECKE_URL", raising=False)
     with pytest.raises(ki.KIFehler, match="nicht eingerichtet"):
         ki.frage("claude-bruecke", "sql", "k", text="x")
+
+
+def test_eigener_systemprompt_und_schema(monkeypatch):
+    """Job Agent schickt Systemprompt und JSON-Schema mit; ohne die Felder bleibt alles wie bisher."""
+    gesehen = []
+
+    def mit_system(modell, system, prompt, schema):
+        gesehen.append((modell, system, prompt, schema))
+        return '{"ok": true}'
+    s = ThreadingHTTPServer(("127.0.0.1", 0), baue_handler(TOKEN, {"127.0.0.1"}, lambda m, p: "alt", mit_system))
+    threading.Thread(target=s.serve_forever, daemon=True).start()
+    try:
+        url = f"http://127.0.0.1:{s.server_address[1]}/frage"
+        r = httpx.post(url, headers={"X-Bruecke-Token": TOKEN},
+                       json={"prompt": "p", "system": "sys", "json_schema": {"type": "object"}, "modell": "claude-x"})
+        assert r.status_code == 200 and r.json()["antwort"] == '{"ok": true}'
+        assert gesehen == [("claude-x", "sys", "p", {"type": "object"})]
+        r = httpx.post(url, headers={"X-Bruecke-Token": TOKEN}, json={"prompt": "p"})
+        assert r.json()["antwort"] == "alt"
+        r = httpx.post(url, headers={"X-Bruecke-Token": TOKEN}, json={"prompt": "p", "system": 5})
+        assert r.status_code == 400
+    finally:
+        s.shutdown()

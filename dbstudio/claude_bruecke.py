@@ -5,6 +5,9 @@
 Nimmt nur POST /frage von erlaubten Adressen (Standard 192.168.178.215) mit passendem Kopf „X-Bruecke-Token“ an.
 Token im Schlüsselbund (Dienst „db-studio“, Eintrag „claude-bruecke“) oder in DBSTUDIO_CLAUDE_BRUECKE_TOKEN.
 Claude läuft ohne Werkzeuge (`claude -p --tools ""`), eine Anfrage zur Zeit, Zeitlimit wie in ki.ZEIT.
+
+Optional (Job Agent Web, CT 106): „system“ ersetzt den SQL-Systemprompt, „json_schema“ verlangt strukturierte Ausgabe.
+Ohne diese Felder verhält sich die Brücke wie bisher.
 """
 from __future__ import annotations
 
@@ -12,8 +15,11 @@ import hmac
 import json
 import os
 import re
+import subprocess
 import sys
+import tempfile
 import threading
+from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from . import ki
@@ -33,8 +39,41 @@ def token() -> str:
     return t
 
 
-def baue_handler(geheim: str, erlaubt: set[str], frage=None):
+MAX_SYSTEM = 64 * 1024
+ZEIT_MIT_SYSTEM = 300
+
+
+def _mit_system(modell: str, system: str, prompt: str, schema: dict | None) -> str:
+    """Claude Code mit eigenem Systemprompt und optional JSON-Schema; liefert den Text bzw. das JSON als Text."""
+    pfad = ki.claude_pfad()
+    if not pfad:
+        raise ki.KIFehler("Claude Code ist nicht installiert.")
+    befehl = [pfad, "-p", "--output-format", "json", "--no-session-persistence", "--tools", "",
+              "--strict-mcp-config", "--setting-sources", "", "--system-prompt", system]
+    if modell:
+        befehl += ["--model", modell]
+    if schema:
+        befehl += ["--json-schema", json.dumps(schema)]
+    ordner = Path(tempfile.gettempdir()) / "claude-bruecke"  # leer: kein Projektkontext
+    ordner.mkdir(exist_ok=True)
+    try:
+        lauf = subprocess.run(befehl, input=prompt, capture_output=True, text=True, timeout=ZEIT_MIT_SYSTEM, cwd=ordner)
+    except subprocess.TimeoutExpired as e:
+        raise ki.KIFehler(f"Claude hat nach {ZEIT_MIT_SYSTEM} s nicht geantwortet.") from e
+    try:
+        daten = json.loads(lauf.stdout)
+    except ValueError as e:
+        raise ki.KIFehler(f"Claude Code meldet: {(lauf.stderr or lauf.stdout)[:200]}") from e
+    if daten.get("is_error"):
+        raise ki.KIFehler(f"Claude meldet: {str(daten.get('result'))[:200]}")
+    if schema and isinstance(daten.get("structured_output"), dict):
+        return json.dumps(daten["structured_output"], ensure_ascii=False)
+    return str(daten.get("result") or "").strip()
+
+
+def baue_handler(geheim: str, erlaubt: set[str], frage=None, mit_system=None):
     frage = frage or ki._claude_code
+    mit_system = mit_system or _mit_system
     eine = threading.Semaphore(1)
 
     class H(BaseHTTPRequestHandler):
@@ -71,6 +110,12 @@ def baue_handler(geheim: str, erlaubt: set[str], frage=None):
             try:
                 daten = json.loads(self.rfile.read(laenge))
                 prompt, modell = str(daten["prompt"]), str(daten.get("modell") or "")
+                system = daten.get("system")
+                schema = daten.get("json_schema")
+                if system is not None and (not isinstance(system, str) or len(system) > MAX_SYSTEM):
+                    raise ValueError
+                if schema is not None and not isinstance(schema, dict):
+                    raise ValueError
             except (ValueError, KeyError, TypeError):
                 return self.antworte(400, {"fehler": "Ungültige Anfrage"})
             if modell and not re.fullmatch(r"[A-Za-z0-9._\[\]-]{1,60}", modell):
@@ -78,6 +123,8 @@ def baue_handler(geheim: str, erlaubt: set[str], frage=None):
             if not eine.acquire(timeout=30):
                 return self.antworte(429, {"fehler": "Claude ist gerade beschäftigt – gleich nochmal."})
             try:
+                if system is not None:
+                    return self.antworte(200, {"antwort": mit_system(modell, system, prompt, schema)})
                 return self.antworte(200, {"antwort": frage(modell, prompt)})
             except ki.KIFehler as e:
                 return self.antworte(502, {"fehler": str(e)})
