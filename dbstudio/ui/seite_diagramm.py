@@ -1294,7 +1294,7 @@ class DiagrammSeite(QWidget):
         if not anw:
             meldung(self, "Keine Änderung", "Name, Typ und NOT NULL sind unverändert.")
             return
-        self.vorschau(f"{tab}.{spalte} ändern", anw)
+        self.vorschau(f"{tab}.{spalte} ändern", anw, self._folgen(lambda: erm.folgen_spalte(self.h.t, self.modell, tab, spalte, d.spalte())))
 
     def beziehung_neu(self, von_tab: str, von_sp: str, nach_tab: str, nach_sp: str):
         if not self._bereit_schreiben():
@@ -1305,7 +1305,14 @@ class DiagrammSeite(QWidget):
             return
         fk.name = d.name.text().strip() or erm.fk_name(fk)
         fk.bei_loeschen, fk.bei_aendern = d.loeschen.currentText(), d.aendern.currentText()
-        self.vorschau("Neue Beziehung", erm.ddl_fk_neu(self.modell, fk))
+        self.vorschau("Neue Beziehung", erm.ddl_fk_neu(self.modell, fk), self._folgen(lambda: erm.folgen_fk(self.h.t, self.modell, fk)))
+
+    def _folgen(self, analyse) -> list[str]:
+        """Folgen für den Bestand als Hinweiszeilen: ⚠ = Daten verlieren den Bezug bzw. die Änderung scheitert."""
+        try:
+            return [("⚠ " if f.stufe == "gefahr" else "ℹ ") + f.text for f in analyse()]
+        except Exception as e:  # Analyse ist Hilfe, kein Hindernis
+            return [f"ℹ Bestand nicht geprüft: {type(e).__name__}"]
 
     def _bereit_schreiben(self) -> bool:
         if not self.h.t or not self.modell:

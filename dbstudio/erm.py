@@ -533,3 +533,103 @@ def vorschlaege(m: Modell) -> list[Fremdschluessel]:
     for f in erg:
         f.name = fk_name(f)
     return erg
+
+
+# --- Folgen einer Änderung: verwaiste Datensätze ------------------------------------------------------------------
+# Viele Datenbanken leben ohne Constraints. Darum zählen hier auch Beziehungen, die nur über Namen bestehen
+# („kunde_id“ → kunden.id, siehe vorschlaege), nicht nur echte Fremdschlüssel.
+
+@dataclass
+class Folge:
+    stufe: str  # "gefahr": Daten verlieren den Bezug bzw. die Änderung scheitert; "hinweis": prüfen
+    text: str
+
+
+def beziehungen(m: Modell) -> list[tuple[Fremdschluessel, bool]]:
+    """Alle Beziehungen: (Fremdschlüssel, echt?) – echte Constraints und solche, die nur aus den Namen folgen."""
+    return [(f, True) for f in m.fks] + [(f, False) for f in vorschlaege(m)]
+
+
+def _zaehle(t: Treiber, sql: str) -> int | None:
+    try:
+        return int(t.abfrage(sql, limit=1).zeilen[0][0])
+    except Exception:
+        return None
+
+
+def verwaiste(t: Treiber, m: Modell, f: Fremdschluessel) -> tuple[int | None, list]:
+    """Zahl der Zeilen in f.tabelle, deren Verweis auf keine Zeile in f.ziel zeigt (NULL zählt nicht), plus Beispiele."""
+    d, s = t, m.schema
+    c = " AND ".join(f"c.{d.zitiere(a)} IS NOT NULL" for a in f.spalten)
+    gleich = " AND ".join(f"p.{d.zitiere(b)} = c.{d.zitiere(a)}" for a, b in zip(f.spalten, f.ziel_spalten))
+    basis = (f"FROM {d.voll(s, f.tabelle)} c WHERE {c} AND NOT EXISTS "
+             f"(SELECT 1 FROM {d.voll(s, f.ziel)} p WHERE {gleich})")
+    anzahl = _zaehle(t, f"SELECT COUNT(*) {basis}")
+    beispiele = []
+    if anzahl:
+        spalten = ", ".join(f"c.{d.zitiere(a)}" for a in f.spalten)
+        try:
+            erg = t.abfrage(f"SELECT DISTINCT {spalten} {basis}", limit=5)
+            beispiele = [z[0] if len(z) == 1 else tuple(z) for z in erg.zeilen[:5]]
+        except Exception:
+            pass
+    return anzahl, beispiele
+
+
+def _art(echt: bool) -> str:
+    return "Fremdschlüssel" if echt else "Beziehung ohne Constraint (nur über den Namen)"
+
+
+def folgen_fk(t: Treiber, m: Modell, f: Fremdschluessel) -> list[Folge]:
+    anzahl, beispiele = verwaiste(t, m, f)
+    if anzahl is None:
+        return [Folge("hinweis", f"Bestand nicht prüfbar ({f.tabelle} → {f.ziel}), z. B. wegen unterschiedlicher Typen.")]
+    if anzahl:
+        return [Folge("gefahr", f"{anzahl} Zeilen in {f.tabelle}.{','.join(f.spalten)} zeigen auf nichts in {f.ziel}"
+                                f" (z. B. {', '.join(map(str, beispiele))}). Der Fremdschlüssel lässt sich so nicht anlegen; "
+                                f"erst bereinigen oder auf NULL setzen.")]
+    return [Folge("hinweis", f"Bestand passt: Alle Verweise in {f.tabelle}.{','.join(f.spalten)} finden ihr Ziel in {f.ziel}.")]
+
+
+def folgen_spalte(t: Treiber, m: Modell, tabelle: str, alt: str, neu: Spalte) -> list[Folge]:
+    tab = m.tabellen[tabelle]
+    vorher = next(s for s in tab.spalten if s.name == alt)
+    aus: list[Folge] = []
+    umbenannt = neu.name != alt
+    typ_anders = typ_nativ(m.art, neu.typ).lower() != (vorher.typ or "").lower()
+    voll = t.voll(m.schema, tabelle)
+    if vorher.nullbar and not neu.nullbar:
+        n = _zaehle(t, f"SELECT COUNT(*) FROM {voll} WHERE {t.zitiere(alt)} IS NULL")
+        if n:
+            aus.append(Folge("gefahr", f"{n} Zeilen in {tabelle}.{alt} sind leer (NULL): NOT NULL scheitert, erst füllen."))
+    for f, echt in beziehungen(m):
+        # Die Spalte ist Ziel einer Beziehung (meist der Primärschlüssel): andere Tabellen verweisen hierher.
+        if f.ziel == tabelle and alt in f.ziel_spalten and (umbenannt or typ_anders):
+            n = _zaehle(t, f"SELECT COUNT(*) FROM {t.voll(m.schema, f.tabelle)} WHERE "
+                           + " AND ".join(f"{t.zitiere(a)} IS NOT NULL" for a in f.spalten))
+            wer = f"{f.tabelle}.{','.join(f.spalten)}"
+            if echt and typ_anders:
+                aus.append(Folge("gefahr", f"{n or 0} Zeilen in {wer} verweisen per Fremdschlüssel auf {tabelle}.{alt}. "
+                                           f"Ein anderer Typ passt nicht mehr zu ihnen; die Datenbank lehnt das ab oder die Werte ändern sich."))
+            elif not echt:
+                aus.append(Folge("gefahr", f"{n or 0} Zeilen in {wer} verweisen ohne Constraint auf {tabelle}.{alt}. "
+                                           + ("Nach dem Umbenennen findet Code, der über den Namen verknüpft, sie nicht mehr. " if umbenannt else "")
+                                           + ("Mit anderem Typ können Vergleiche ins Leere laufen. " if typ_anders else "")
+                                           + "Die Datenbank warnt hier nicht – die Zeilen bleiben ohne Bezugspunkt."))
+            elif umbenannt:
+                aus.append(Folge("hinweis", f"{wer} verweist per Fremdschlüssel hierher; der Constraint zieht beim Umbenennen mit."))
+        # Die Spalte ist selbst ein Verweis.
+        if f.tabelle == tabelle and alt in f.spalten:
+            anzahl, beispiele = verwaiste(t, m, f)
+            if anzahl:
+                aus.append(Folge("gefahr", f"Schon jetzt zeigen {anzahl} Zeilen in {tabelle}.{alt} auf nichts in {f.ziel} "
+                                           f"(z. B. {', '.join(map(str, beispiele))})."))
+            if not echt and umbenannt and not re.search(r"_?[iI][dD]$", neu.name):
+                aus.append(Folge("hinweis", f"{tabelle}.{alt} wirkt wie ein Verweis auf {f.ziel}. Der neue Name "
+                                            f"„{neu.name}“ lässt diese Beziehung nicht mehr erkennen."))
+            if typ_anders and f.ziel in m.tabellen:
+                ziel_typ = next((s.typ for s in m.tabellen[f.ziel].spalten if s.name in f.ziel_spalten), "")
+                if ziel_typ and typ_nativ(m.art, neu.typ).lower() != ziel_typ.lower():
+                    aus.append(Folge("gefahr", f"Neuer Typ {typ_nativ(m.art, neu.typ)} passt nicht zu {f.ziel}.{','.join(f.ziel_spalten)} "
+                                               f"({ziel_typ}). {_art(echt)} wird unzuverlässig."))
+    return aus

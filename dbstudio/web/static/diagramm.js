@@ -296,7 +296,10 @@ const Diagramm = (() => {
       try {
         const r = await P().api(`/api/v/${P().zustand.vid}/erm/ddl`, { body: { schema: g.schema, ...ddlAnfrage() } });
         $("#ddl-text").value = r.anweisungen.join(";\n\n") + ";"; $("#ddl-los").disabled = !!g.modell.schreibschutz;
-        const h = $("#ddl-hinweise"); h.classList.toggle("versteckt", !r.hinweise.length); h.textContent = r.hinweise.join(" ");
+        const h = $("#ddl-hinweise"), folgen = r.folgen || [];
+        h.classList.toggle("versteckt", !r.hinweise.length && !folgen.length);
+        h.innerHTML = [...folgen.map(f => `<div class="folge ${f.stufe}">${f.stufe === "gefahr" ? "⚠ " : "ℹ "}${P().esc(f.text)}</div>`),
+                       ...r.hinweise.map(x => `<div>${P().esc(x)}</div>`)].join("");
       } catch (e) { P().toast(e.message, "fehler"); }
     };
     $("#ddl-text").oninput = () => { $("#ddl-los").disabled = !$("#ddl-text").value.trim() || !!g.modell.schreibschutz; };

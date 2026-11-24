@@ -609,6 +609,7 @@ def erstelle_app(speicher: Speicher | None = None, cookie_secure: bool = True) -
         sch = schema_von(t, d.schema_)
         sp_ = lambda x: Spalte(x.name, x.typ, x.nullbar, x.pk)  # noqa: E731
         try:
+            folgen: list = []
             if d.aktion == "tabelle":
                 if not d.tabelle or not d.spalten:
                     raise ValueError("Name und mindestens eine Spalte nötig.")
@@ -616,18 +617,23 @@ def erstelle_app(speicher: Speicher | None = None, cookie_secure: bool = True) -
             elif d.aktion == "spalte" and d.spalte:
                 anw = erm.ddl_spalte_neu(t.art, sch, d.tabelle, sp_(d.spalte))
             elif d.aktion == "spalte_aendern" and d.spalte:
-                anw = erm.ddl_spalte_aendern(modell(t, sch), d.tabelle, d.alt, sp_(d.spalte))
+                m_ = modell(t, sch)
+                anw = erm.ddl_spalte_aendern(m_, d.tabelle, d.alt, sp_(d.spalte))
+                folgen = erm.folgen_spalte(t, m_, d.tabelle, d.alt, sp_(d.spalte))
             elif d.aktion == "fk":
                 f = erm.Fremdschluessel(d.tabelle, d.fk_spalten, d.ziel, d.ziel_spalten, "", d.bei_loeschen, d.bei_aendern)
                 f.name = erm.fk_name(f)
-                anw = erm.ddl_fk_neu(modell(t, sch), f)
+                m_ = modell(t, sch)
+                anw = erm.ddl_fk_neu(m_, f)
+                folgen = erm.folgen_fk(t, m_, f)
             else:
                 raise ValueError("Unbekannte Aktion.")
         except HTTPException:
             raise
         except Exception as e:
             raise db_fehler(e)
-        return {"anweisungen": anw, "hinweise": erm.hinweise(t.art, anw)}
+        return {"anweisungen": anw, "hinweise": erm.hinweise(t.art, anw),
+                "folgen": [{"stufe": x.stufe, "text": x.text} for x in folgen]}
 
     @app.post("/api/v/{vid}/erm/ausfuehren")
     def erm_ausfuehren(vid: str, d: AusfuehrenIn, s: Sitzung = Depends(sitzung)):

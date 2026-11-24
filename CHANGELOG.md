@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.1 – 2026-11-24
+
+- **Folgen-Analyse im ER-Designer** (Desktop und Web): Beim Anlegen einer Beziehung oder beim Ändern einer Spalte
+  zählt Pi DB Studio im Bestand, welche Datensätze ihren Bezugspunkt verlieren oder schon verloren haben – mit
+  Beispielwerten. Berücksichtigt auch Beziehungen ohne Constraint, die nur über den Namen bestehen (`kunde_id` → `kunden`).
+  Warnt u. a. bei verwaisten Verweisen vor einem neuen Fremdschlüssel, beim Umbenennen oder Typwechsel eines
+  Primärschlüssels, auf den andere verweisen, und bei NOT NULL auf Spalten mit leeren Werten.
+
 ## 0.4.0 – 2026-11-24
 
 - **Generische REST-API** (Web) unter `/rest/v1/{verbindung}/{tabelle}` für alle Verbindungsarten: Lesen mit Filtern
