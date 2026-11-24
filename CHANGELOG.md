@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.2 – 2026-11-24
+
+- **Löschen mit Folgen-Analyse** (Desktop: Menü „…“, Web: „🗑 Löschen …“): Tabelle, Spalte oder Fremdschlüssel.
+  Vorher zählt die Vorschau, wer danach ohne Bezugspunkt wäre – auch über Beziehungen ohne Constraint – und wie viele
+  Zeilen bzw. Werte verloren gehen. SQLite/DuckDB per Neuaufbau, MySQL mit DROP FOREIGN KEY, sonst DROP CONSTRAINT.
+- **Datenbank-Dump importieren (.sql)** unter „Import & Export“: macht Struktur-Exporte wie das Supabase-Schema
+  lauffähig (fehlende Sequenzen, `ARRAY` ohne Typ, `uuid_generate_v4` → `gen_random_uuid`, Fremdschlüssel am Ende,
+  Verweise auf `auth.users` als Ersatztabelle oder weggelassen, Kommentare) und spielt alles in einer Transaktion ein.
+
 ## 0.4.1 – 2026-11-24
 
 - **Folgen-Analyse im ER-Designer** (Desktop und Web): Beim Anlegen einer Beziehung oder beim Ändern einer Spalte

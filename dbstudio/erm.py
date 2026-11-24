@@ -633,3 +633,92 @@ def folgen_spalte(t: Treiber, m: Modell, tabelle: str, alt: str, neu: Spalte) ->
                     aus.append(Folge("gefahr", f"Neuer Typ {typ_nativ(m.art, neu.typ)} passt nicht zu {f.ziel}.{','.join(f.ziel_spalten)} "
                                                f"({ziel_typ}). {_art(echt)} wird unzuverlässig."))
     return aus
+
+
+# --- Löschen: Tabelle, Spalte, Beziehung ----------------------------------------------------------------------------
+
+def ddl_tabelle_loeschen(m: Modell, tabelle: str) -> list[str]:
+    return [f"DROP TABLE {dialekt(m.art).voll(m.schema, tabelle)}"]
+
+
+def ddl_spalte_loeschen(m: Modell, tabelle: str, spalte: str) -> list[str]:
+    t = m.tabellen[tabelle]
+    if spalte not in [s.name for s in t.spalten]:
+        raise ValueError(f"Spalte {spalte} gibt es in {tabelle} nicht.")
+    if len(t.spalten) == 1:
+        raise ValueError("Die letzte Spalte lässt sich nicht löschen – dann die ganze Tabelle löschen.")
+    d = dialekt(m.art)
+    if m.art in OHNE_ALTER_FK:  # SQLite/DuckDB: DROP COLUMN scheitert an Schlüsseln und Verweisen → Neuaufbau
+        spalten = [s for s in t.spalten if s.name != spalte]
+        fks = [f for f in m.fks if f.tabelle == tabelle and spalte not in f.spalten]
+        return neuaufbau(m, tabelle, spalten, fks, {s.name: s.name for s in spalten})
+    aus = [f"ALTER TABLE {d.voll(m.schema, tabelle)} DROP {'FOREIGN KEY' if m.art == 'mysql' else 'CONSTRAINT'} {d.zitiere(f.name)}"
+           for f in m.fks if f.tabelle == tabelle and spalte in f.spalten and f.name]
+    return aus + [f"ALTER TABLE {d.voll(m.schema, tabelle)} DROP COLUMN {d.zitiere(spalte)}"]
+
+
+def ddl_fk_loeschen(m: Modell, f: Fremdschluessel) -> list[str]:
+    d = dialekt(m.art)
+    if m.art in OHNE_ALTER_FK:
+        t = m.tabellen[f.tabelle]
+        rest = [x for x in m.fks if x.tabelle == f.tabelle and x.schluessel != f.schluessel]
+        return neuaufbau(m, f.tabelle, t.spalten, rest, {s.name: s.name for s in t.spalten})
+    if not f.name:
+        raise ValueError("Der Fremdschlüssel hat keinen Namen; bitte im SQL-Editor löschen.")
+    art = "FOREIGN KEY" if m.art == "mysql" else "CONSTRAINT"
+    return [f"ALTER TABLE {d.voll(m.schema, f.tabelle)} DROP {art} {d.zitiere(f.name)}"]
+
+
+def _nicht_leer(t: Treiber, m: Modell, f: Fremdschluessel) -> int | None:
+    return _zaehle(t, f"SELECT COUNT(*) FROM {t.voll(m.schema, f.tabelle)} WHERE "
+                      + " AND ".join(f"{t.zitiere(a)} IS NOT NULL" for a in f.spalten))
+
+
+def folgen_tabelle_loeschen(t: Treiber, m: Modell, tabelle: str) -> list[Folge]:
+    aus: list[Folge] = []
+    n = _zaehle(t, f"SELECT COUNT(*) FROM {t.voll(m.schema, tabelle)}")
+    if n:
+        aus.append(Folge("gefahr", f"{tabelle} enthält {n} Zeilen; sie sind danach weg (vorher sichern: Export)."))
+    for f, echt in beziehungen(m):
+        if f.ziel == tabelle and f.tabelle != tabelle:
+            k = _nicht_leer(t, m, f)
+            wer = f"{f.tabelle}.{','.join(f.spalten)}"
+            if echt:
+                aus.append(Folge("gefahr", f"{wer} verweist per Fremdschlüssel hierher ({k or 0} Zeilen mit Wert). "
+                                           f"Die Datenbank verweigert das Löschen, bis der Fremdschlüssel weg ist – "
+                                           f"danach bleiben diese Zeilen ohne Bezugspunkt."))
+            elif k:
+                aus.append(Folge("gefahr", f"{k} Zeilen in {wer} verweisen ohne Constraint hierher. Die Datenbank merkt "
+                                           f"nichts – nach dem Löschen zeigen sie ins Leere."))
+        if f.tabelle == tabelle and f.ziel != tabelle:
+            aus.append(Folge("hinweis", f"Die Beziehung {tabelle} → {f.ziel} verschwindet mit der Tabelle."))
+    return aus
+
+
+def folgen_spalte_loeschen(t: Treiber, m: Modell, tabelle: str, spalte: str) -> list[Folge]:
+    aus: list[Folge] = []
+    tab = m.tabellen[tabelle]
+    n = _zaehle(t, f"SELECT COUNT(*) FROM {t.voll(m.schema, tabelle)} WHERE {t.zitiere(spalte)} IS NOT NULL")
+    if n:
+        aus.append(Folge("hinweis", f"{n} Werte in {tabelle}.{spalte} gehen verloren."))
+    if spalte in tab.pk:
+        aus.append(Folge("gefahr", f"{spalte} gehört zum Primärschlüssel von {tabelle}. Ohne ihn sind Zeilen nicht mehr "
+                                   f"eindeutig ansprechbar."))
+    for f, echt in beziehungen(m):
+        if f.ziel == tabelle and spalte in f.ziel_spalten and f.tabelle != tabelle:
+            k = _nicht_leer(t, m, f)
+            aus.append(Folge("gefahr", f"{k or 0} Zeilen in {f.tabelle}.{','.join(f.spalten)} verweisen "
+                                       f"{'per Fremdschlüssel' if echt else 'ohne Constraint'} auf {tabelle}.{spalte} – "
+                                       f"sie bleiben ohne Bezugspunkt."
+                                       + (" Die Datenbank lehnt das Löschen ab, solange der Fremdschlüssel besteht." if echt else "")))
+        if f.tabelle == tabelle and spalte in f.spalten:
+            aus.append(Folge("hinweis", f"Die Beziehung {tabelle}.{spalte} → {f.ziel} "
+                                        f"{'(Fremdschlüssel wird mit gelöscht)' if echt else '(nur über den Namen)'} entfällt."))
+    return aus
+
+
+def folgen_fk_loeschen(t: Treiber, m: Modell, f: Fremdschluessel) -> list[Folge]:
+    k = _nicht_leer(t, m, f)
+    return [Folge("gefahr", f"Ab jetzt prüft die Datenbank nicht mehr, ob {f.tabelle}.{','.join(f.spalten)} auf "
+                            f"vorhandene Zeilen in {f.ziel} zeigt ({k or 0} Zeilen mit Wert). Gelöschte Ziele hinterlassen "
+                            f"dann unbemerkt Datensätze ohne Bezugspunkt.")]

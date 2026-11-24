@@ -54,3 +54,48 @@ def test_not_null_mit_leeren_werten(db):
     t, m = db
     folgen = erm.folgen_spalte(t, m, "bestellungen", "notiz", Spalte("notiz", "TEXT", False, False))
     assert folgen and folgen[0].stufe == "gefahr" and "1 Zeilen" in folgen[0].text
+
+
+def test_tabelle_loeschen_warnt_vor_waisen_ohne_constraint(db):
+    t, m = db
+    folgen = erm.folgen_tabelle_loeschen(t, m, "kunden")
+    texte = " ".join(f.text for f in folgen if f.stufe == "gefahr")
+    assert "2 Zeilen" in texte and "4 Zeilen in bestellungen.kunde_id" in texte and "ins Leere" in texte
+    assert erm.ddl_tabelle_loeschen(m, "kunden")[0].startswith("DROP TABLE")
+
+
+def test_spalte_loeschen_pk_und_verweis(db):
+    t, m = db
+    folgen = erm.folgen_spalte_loeschen(t, m, "kunden", "id")
+    assert any("Primärschlüssel" in f.text for f in folgen)
+    assert any("4 Zeilen in bestellungen.kunde_id" in f.text and f.stufe == "gefahr" for f in folgen)
+
+
+def test_spalte_loeschen_sqlite_per_neuaufbau(db):
+    t, m = db
+    anw = erm.ddl_spalte_loeschen(m, "bestellungen", "notiz")
+    erm.ausfuehren(t, anw)
+    assert [s.name for s in t.spalten("main", "bestellungen")] == ["id", "kunde_id"]
+    assert t.anzahl("main", "bestellungen") == 5
+
+
+def test_fk_loeschen_mit_echtem_fremdschluessel(tmp_path):
+    t = treiber.oeffne({"art": "sqlite", "datei": str(tmp_path / "g.db")}, None)
+    t.abfrage("CREATE TABLE a (id INTEGER PRIMARY KEY)")
+    t.abfrage("CREATE TABLE b (id INTEGER PRIMARY KEY, a_id INTEGER REFERENCES a(id))")
+    t.abfrage("INSERT INTO a VALUES (1)")
+    t.abfrage("INSERT INTO b VALUES (1, 1)")
+    m = erm.lade(t, "main")
+    f = m.fks[0]
+    assert erm.folgen_fk_loeschen(t, m, f)[0].stufe == "gefahr"
+    erm.ausfuehren(t, erm.ddl_fk_loeschen(m, f))
+    assert erm.lade(t, "main").fks == []
+    t.schliessen()
+
+
+def test_letzte_spalte_nicht_loeschbar(tmp_path):
+    t = treiber.oeffne({"art": "sqlite", "datei": str(tmp_path / "h.db")}, None)
+    t.abfrage("CREATE TABLE x (id INTEGER)")
+    with pytest.raises(ValueError):
+        erm.ddl_spalte_loeschen(erm.lade(t, "main"), "x", "id")
+    t.schliessen()

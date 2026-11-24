@@ -20,7 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.background import BackgroundTask
 
-from .. import __version__, austausch, efcore, erm, ki, sqlschutz, treiber
+from .. import __version__, austausch, efcore, erm, ki, sqlimport, sqlschutz, treiber
 from ..treiber import ARTEN, GENERISCH, Spalte
 from . import rest
 from .speicher import Speicher, aus_umgebung
@@ -626,6 +626,23 @@ def erstelle_app(speicher: Speicher | None = None, cookie_secure: bool = True) -
                 m_ = modell(t, sch)
                 anw = erm.ddl_fk_neu(m_, f)
                 folgen = erm.folgen_fk(t, m_, f)
+            elif d.aktion == "tabelle_loeschen":
+                m_ = modell(t, sch)
+                if d.tabelle not in m_.tabellen:
+                    raise ValueError("Tabelle unbekannt.")
+                anw, folgen = erm.ddl_tabelle_loeschen(m_, d.tabelle), erm.folgen_tabelle_loeschen(t, m_, d.tabelle)
+            elif d.aktion == "spalte_loeschen":
+                m_ = modell(t, sch)
+                if d.tabelle not in m_.tabellen:
+                    raise ValueError("Tabelle unbekannt.")
+                anw = erm.ddl_spalte_loeschen(m_, d.tabelle, d.alt)
+                folgen = erm.folgen_spalte_loeschen(t, m_, d.tabelle, d.alt)
+            elif d.aktion == "fk_loeschen":
+                m_ = modell(t, sch)
+                f = next((x for x in m_.fks if x.tabelle == d.tabelle and x.spalten == d.fk_spalten), None)
+                if not f:
+                    raise ValueError("Diese Beziehung ist kein Fremdschlüssel in der Datenbank.")
+                anw, folgen = erm.ddl_fk_loeschen(m_, f), erm.folgen_fk_loeschen(t, m_, f)
             else:
                 raise ValueError("Unbekannte Aktion.")
         except HTTPException:
@@ -707,6 +724,32 @@ def erstelle_app(speicher: Speicher | None = None, cookie_secure: bool = True) -
         finally:
             e.schliessen()
         return FileResponse(pfad, filename=f"{name}.{format}", background=BackgroundTask(os.unlink, pfad))
+
+    @app.post("/api/v/{vid}/sqlimport")
+    async def sql_import(vid: str, datei: UploadFile = File(...), fremde: str = Form("ersatz"), ausfuehren: bool = Form(False),
+                         s: Sitzung = Depends(sitzung)):
+        """SQL-Dump (z. B. Supabase-Schema) aufbereiten; mit ausfuehren=true in einer Transaktion einspielen."""
+        if Path(datei.filename or "").suffix.lower() != ".sql":
+            raise HTTPException(400, "Erwartet eine .sql-Datei.")
+        roh = await datei.read(20 * 1024 * 1024 + 1)
+        if len(roh) > 20 * 1024 * 1024:
+            raise HTTPException(413, "Höchstens 20 MB.")
+        try:
+            plan = sqlimport.vorbereiten(roh.decode("utf-8", errors="replace"), fremde)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        antwort = {"anweisungen": plan.anweisungen, "hinweise": plan.hinweise, "tabellen": plan.tabellen,
+                   "fks": plan.fks, "fremde_ziele": plan.fremde_ziele}
+        if not ausfuehren:
+            return antwort
+        t, _ = verbindung(s, vid)
+        if t.schreibschutz:
+            raise HTTPException(403, "Die Verbindung ist schreibgeschützt.")
+        try:
+            antwort["ausgefuehrt"] = sqlimport.einspielen(t, plan)
+        except Exception as e:
+            raise db_fehler(e)
+        return antwort
 
     @app.post("/api/v/{vid}/import")
     async def importieren(vid: str, datei: UploadFile = File(...), tabelle: str = Form(...), schema_: str = Form("", alias="schema"),

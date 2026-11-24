@@ -95,6 +95,7 @@
         <button class="knopf klein primaer" id="erm-tabelle">＋ Tabelle</button>
         <button class="knopf klein" id="erm-spalte">＋ Spalte</button>
         <button class="knopf klein blau" id="erm-vorschlaege">✦ Beziehungen vorschlagen</button>
+        <button class="knopf klein gefahr" id="erm-loeschen">🗑 Löschen …</button>
         <span class="trenner"></span>
         <select id="erm-export"><option value="">⇩ Export …</option><option value="svg">SVG</option><option value="png">PNG</option><option value="cs">DbContext (C#)</option></select>
         <div class="rechts gedimmt" id="erm-zahlen"></div>
@@ -163,6 +164,15 @@
           <label class="schalter"><input type="checkbox" name="neu"> Tabelle neu anlegen (Typen werden geschätzt)</label>
           <div class="leiste"><button class="knopf" type="button" id="import-vorschau">Vorschau</button><button class="knopf primaer" type="submit">Importieren</button></div>
           <div class="tabelle-wrap" style="max-height:260px"><table class="daten" id="import-tabelle"></table></div>
+        </form>
+        <form class="karte" id="f-sqlimport" style="display:flex;flex-direction:column;gap:10px">
+          <b>Datenbank-Dump importieren (.sql, z. B. Supabase)</b>
+          <span class="gedimmt">Bereitet Struktur-Exporte auf: Sequenzen, Reihenfolge, Fremdschlüssel am Ende, Supabase-Eigenheiten. Alles in einer Transaktion. Ziel: PostgreSQL.</span>
+          <input type="file" name="datei" accept=".sql" required>
+          <label class="feld">Verweise auf fremde Schemata (z. B. auth.users)<select name="fremde"><option value="ersatz">Ersatztabelle anlegen (nur Schlüssel)</option><option value="weglassen">Fremdschlüssel weglassen</option></select></label>
+          <div class="leiste"><button class="knopf" type="button" id="sqlimport-vorschau">Vorschau</button><button class="knopf primaer" type="submit">Einspielen</button></div>
+          <div id="sqlimport-hinweise" class="meldung versteckt"></div>
+          <textarea id="sqlimport-text" readonly style="min-height:160px;font-family:var(--mono, monospace);font-size:12px"></textarea>
         </form>
         <form class="karte" id="f-export" style="display:flex;flex-direction:column;gap:10px">
           <b>Export</b>

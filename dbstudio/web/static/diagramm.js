@@ -281,6 +281,7 @@ const Diagramm = (() => {
     $("#erm-tabelle").onclick = tabelleDialog;
     $("#erm-spalte").onclick = spalteDialog;
     $("#erm-vorschlaege").onclick = vorschlaege;
+    $("#erm-loeschen").onclick = loeschDialog;
     $("#erm-export").onchange = ev => { const v = ev.target.value; ev.target.value = ""; if (v === "svg") exportSvg(); if (v === "png") exportPng(); if (v === "cs") exportCs(); };
     $("#ddl-abbruch").onclick = () => $("#d-ddl").close();
   }
@@ -351,6 +352,29 @@ const Diagramm = (() => {
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><label class="feld">ON DELETE<select id="df-del">${AKTIONEN}</select></label>
       <label class="feld">ON UPDATE<select id="df-upd">${AKTIONEN}</select></label></div>`,
     () => ({ aktion: "fk", tabelle: von, fk_spalten: [spalte], ziel: nach, ziel_spalten: [zielSpalte], bei_loeschen: $("#df-del").value, bei_aendern: $("#df-upd").value }));
+  }
+  function loeschDialog() {
+    const m = g.modell, tabellen = m.tabellen.map(t => t.name);
+    const fks = (m.fks || []);
+    ddlOeffnen("Löschen – mit Folgen-Analyse", `<div class="gedimmt">Vor dem Ausführen zählt die Vorschau, welche Datensätze danach ohne Bezugspunkt wären – auch bei Beziehungen ohne Constraint.</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <label class="feld">Was<select id="dl-art"><option value="tabelle_loeschen">Tabelle</option><option value="spalte_loeschen">Spalte</option><option value="fk_loeschen">Beziehung (Fremdschlüssel)</option></select></label>
+        <label class="feld" id="dl-tab-feld">Tabelle<select id="dl-tab">${tabellen.map(n => `<option>${P().esc(n)}</option>`).join("")}</select></label>
+        <label class="feld" id="dl-sp-feld">Spalte<select id="dl-sp"></select></label>
+        <label class="feld" id="dl-fk-feld">Beziehung<select id="dl-fk">${fks.map((f, i) => `<option value="${i}">${P().esc(f.tabelle)}.${P().esc(f.spalten.join(","))} → ${P().esc(f.ziel)}</option>`).join("")}</select></label>
+      </div>`, () => {
+      const art = $("#dl-art").value;
+      if (art === "fk_loeschen") { const f = fks[Number($("#dl-fk").value)]; return { aktion: art, tabelle: f.tabelle, fk_spalten: f.spalten }; }
+      return { aktion: art, tabelle: $("#dl-tab").value, alt: art === "spalte_loeschen" ? $("#dl-sp").value : "" };
+    });
+    const spalten = () => { const t = m.tabellen.find(x => x.name === $("#dl-tab").value);
+      $("#dl-sp").innerHTML = (t ? t.spalten : []).map(s => `<option>${P().esc(s.name)}</option>`).join(""); };
+    const sicht = () => { const a = $("#dl-art").value;
+      $("#dl-tab-feld").style.display = a === "fk_loeschen" ? "none" : ""; $("#dl-sp-feld").style.display = a === "spalte_loeschen" ? "" : "none";
+      $("#dl-fk-feld").style.display = a === "fk_loeschen" ? "" : "none";
+      $("#ddl-text").value = ""; $("#ddl-los").disabled = true; $("#ddl-hinweise").classList.add("versteckt"); };
+    $("#dl-art").onchange = sicht; $("#dl-tab").onchange = () => { spalten(); sicht(); }; $("#dl-sp").onchange = sicht; $("#dl-fk").onchange = sicht;
+    spalten(); sicht();
   }
   async function vorschlaege() {
     try {

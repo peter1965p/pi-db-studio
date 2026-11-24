@@ -419,6 +419,22 @@ $("#import-vorschau").onclick = () => importSenden(true);
 $("#f-import").onsubmit = e => { e.preventDefault(); importSenden(false); };
 $("#f-export").onsubmit = e => { e.preventDefault(); const f = new FormData(e.target); herunterladen({ tabelle: f.get("tabelle"), format: f.get("format") }); };
 
+// --- SQL-Dump-Import -----------------------------------------------------------------------------------------------
+async function sqlImport(ausfuehren) {
+  const f = $("#f-sqlimport"), fd = new FormData(f);
+  if (!fd.get("datei") || !fd.get("datei").name) { toast("Erst eine .sql-Datei wählen.", "fehler"); return; }
+  if (ausfuehren && !confirm("Struktur jetzt in die geöffnete Verbindung einspielen?")) return;
+  fd.append("ausfuehren", ausfuehren ? "true" : "false");
+  try {
+    const r = await api(`/api/v/${zustand.vid}/sqlimport`, { body: fd });
+    const h = $("#sqlimport-hinweise"); h.classList.remove("versteckt"); h.innerHTML = r.hinweise.map(x => `<div>${esc(x)}</div>`).join("");
+    $("#sqlimport-text").value = r.anweisungen.join(";\n\n") + ";";
+    if (ausfuehren) { toast(`${r.ausgefuehrt} Anweisungen eingespielt.`); if (typeof Diagramm !== "undefined") Diagramm.laden(zustand.schema, true); }
+  } catch (e) { toast(e.message, "fehler"); }
+}
+$("#sqlimport-vorschau").onclick = () => sqlImport(false);
+$("#f-sqlimport").onsubmit = ev => { ev.preventDefault(); sqlImport(true); };
+
 // --- Einstellungen ------------------------------------------------------------------------------------------------
 async function einstellungenLaden() {
   const e = await api("/api/einstellungen"), f = $("#f-einstellungen");

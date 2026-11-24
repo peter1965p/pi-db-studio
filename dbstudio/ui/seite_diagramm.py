@@ -1047,8 +1047,10 @@ class DiagrammSeite(QWidget):
             if not w.isVisible():
                 a = m.addAction(text, fn)
                 a.setEnabled(w.isEnabled())
-        if m.isEmpty():
-            m.addAction("Alles sichtbar").setEnabled(False)
+        if not m.isEmpty():
+            m.addSeparator()
+        for text, art in (("🗑 Tabelle löschen …", "tabelle"), ("🗑 Spalte löschen …", "spalte"), ("🗑 Beziehung löschen …", "fk")):
+            m.addAction(text, lambda art=art: self.loeschen(art)).setEnabled(bool(self.modell))
 
     def resizeEvent(self, e):
         super().resizeEvent(e)
@@ -1306,6 +1308,38 @@ class DiagrammSeite(QWidget):
         fk.name = d.name.text().strip() or erm.fk_name(fk)
         fk.bei_loeschen, fk.bei_aendern = d.loeschen.currentText(), d.aendern.currentText()
         self.vorschau("Neue Beziehung", erm.ddl_fk_neu(self.modell, fk), self._folgen(lambda: erm.folgen_fk(self.h.t, self.modell, fk)))
+
+    def loeschen(self, art: str):
+        """Tabelle, Spalte oder Fremdschlüssel löschen – vorher zeigt die Vorschau, wer danach ohne Bezugspunkt wäre."""
+        from PySide6.QtWidgets import QInputDialog
+        if not self._bereit_schreiben():
+            return
+        m = self.modell
+        try:
+            if art == "fk":
+                namen = [f"{f.tabelle}.{','.join(f.spalten)} → {f.ziel}" for f in m.fks]
+                if not namen:
+                    meldung(self, "Keine Fremdschlüssel", "In diesem Schema gibt es keine Fremdschlüssel.")
+                    return
+                wahl, ok = QInputDialog.getItem(self, "Beziehung löschen", "Fremdschlüssel:", namen, 0, False)
+                if not ok:
+                    return
+                f = m.fks[namen.index(wahl)]
+                self.vorschau("Beziehung löschen", erm.ddl_fk_loeschen(m, f), self._folgen(lambda: erm.folgen_fk_loeschen(self.h.t, m, f)))
+                return
+            tab, ok = QInputDialog.getItem(self, "Löschen", "Tabelle:", sorted(m.tabellen), 0, False)
+            if not ok:
+                return
+            if art == "tabelle":
+                self.vorschau(f"Tabelle {tab} löschen", erm.ddl_tabelle_loeschen(m, tab),
+                              self._folgen(lambda: erm.folgen_tabelle_loeschen(self.h.t, m, tab)))
+                return
+            spalte, ok = QInputDialog.getItem(self, "Spalte löschen", f"Spalte in {tab}:", [s.name for s in m.tabellen[tab].spalten], 0, False)
+            if ok:
+                self.vorschau(f"{tab}.{spalte} löschen", erm.ddl_spalte_loeschen(m, tab, spalte),
+                              self._folgen(lambda: erm.folgen_spalte_loeschen(self.h.t, m, tab, spalte)))
+        except ValueError as e:
+            meldung(self, "Nicht möglich", str(e), True)
 
     def _folgen(self, analyse) -> list[str]:
         """Folgen für den Bestand als Hinweiszeilen: ⚠ = Daten verlieren den Bezug bzw. die Änderung scheitert."""
