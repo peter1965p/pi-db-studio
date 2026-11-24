@@ -43,6 +43,19 @@ DBSTUDIO_SCHLUESSEL=$(venv/bin/python -m dbstudio.web schluessel) DBSTUDIO_WEB_D
 Betrieb im Heimnetz: `deploy/deploy-web.sh` → https://192.168.178.215 (Container 104). Admin-Passwort liegt im
 Schlüsselbund (Dienst `db-studio`, Eintrag `web:admin@192.168.178.215`).
 
+## REST-API und Rechte (0.4.0)
+
+Unter „API & Rechte“ legst du API-Schlüssel an. Jeder Schlüssel hat Regeln: Verbindung, Tabelle (oder `*`), Rolle
+(Leser, Schreiber, Admin), gesperrte Spalten und optional einen Zeilenfilter wie `mandant_id=3`.
+
+```
+curl -H "Authorization: Bearer pi_…" "https://<host>/rest/v1/<verbindung>/kunden?ort=eq.Osnabrück&order=name.asc"
+```
+
+Filter `spalte=op.wert` mit `eq, neq, gt, gte, lt, lte, like` oder `is.null`/`is.notnull`; dazu `select`, `order`,
+`limit`, `offset`. Einzeln: `GET/PATCH/DELETE …/{tabelle}/{pk}`, Anlegen: `POST …/{tabelle}`. Die OpenAPI-Beschreibung
+unter `/rest/v1/openapi.json` zeigt nur, was der Schlüssel darf.
+
 ## Tests
 
 ```bash

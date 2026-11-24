@@ -22,6 +22,7 @@ from starlette.background import BackgroundTask
 
 from .. import __version__, austausch, efcore, erm, ki, sqlschutz, treiber
 from ..treiber import ARTEN, GENERISCH, Spalte
+from . import rest
 from .speicher import Speicher, aus_umgebung
 
 STATISCH = Path(__file__).parent / "static"
@@ -741,6 +742,51 @@ def erstelle_app(speicher: Speicher | None = None, cookie_secure: bool = True) -
                 os.unlink(pfad)
 
     # Statische Oberfläche ----------------------------------------------------------------------------------------
+    # --- REST-API mit Berechtigungen ----------------------------------------------------------------------------------
+    ablage = rest.Schluesselablage(sp)
+
+    @app.get("/rest/v1/openapi.json")
+    def rest_openapi(request: Request):
+        kopf = request.headers.get("authorization", "")
+        schluessel = ablage.finde(kopf[7:].strip()) if kopf.lower().startswith("bearer ") else None
+        if not schluessel or not schluessel.get("aktiv"):
+            raise HTTPException(401, "Gültiger API-Schlüssel nötig.")
+        return rest.openapi_fuer(sp, schluessel, __version__)
+
+    app.include_router(rest.erstelle_router(sp, ablage))
+
+    @app.get("/api/rest/schluessel")
+    def rest_schluessel(s: Sitzung = Depends(sitzung)):
+        return {"schluessel": ablage.oeffentlich(), "rollen": rest.ROLLEN, "aktionen": rest.AKTIONEN,
+                "operatoren": list(rest.OPERATOREN)}
+
+    @app.post("/api/rest/schluessel")
+    def rest_schluessel_anlegen(daten: dict, s: Sitzung = Depends(sitzung)):
+        try:
+            eintrag, roh = ablage.anlegen(str(daten.get("name", "")), list(daten.get("regeln") or []),
+                                          int(daten.get("limit_minute") or 120))
+        except (ValueError, TypeError) as e:
+            raise HTTPException(400, str(e))
+        return {"schluessel": eintrag, "geheim": roh, "hinweis": "Nur jetzt sichtbar. Gespeichert wird nur der Hash."}
+
+    @app.patch("/api/rest/schluessel/{sid}")
+    def rest_schluessel_aendern(sid: str, daten: dict, s: Sitzung = Depends(sitzung)):
+        try:
+            return ablage.aendern(sid, daten)
+        except KeyError:
+            raise HTTPException(404, "Schlüssel unbekannt.")
+        except (ValueError, TypeError) as e:
+            raise HTTPException(400, str(e))
+
+    @app.delete("/api/rest/schluessel/{sid}")
+    def rest_schluessel_loeschen(sid: str, s: Sitzung = Depends(sitzung)):
+        ablage.loeschen(sid)
+        return {"ok": True}
+
+    @app.get("/api/rest/protokoll")
+    def rest_protokoll(s: Sitzung = Depends(sitzung)):
+        return ablage.protokoll()
+
     app.mount("/static", StaticFiles(directory=STATISCH), name="static")
 
     @app.get("/")

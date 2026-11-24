@@ -1,6 +1,17 @@
 # Changelog
 
-## Unveröffentlicht
+## 0.4.0 – 2026-11-24
+
+- **Generische REST-API** (Web) unter `/rest/v1/{verbindung}/{tabelle}` für alle Verbindungsarten: Lesen mit Filtern
+  (`spalte=eq|neq|gt|gte|lt|lte|like.wert`, `is.null`), `select`, `order`, `limit`/`offset`; Einzelzugriff, Ändern und
+  Löschen über den Primärschlüssel, Anlegen per POST. Nur gebundene Parameter, Namen gegen das echte Schema geprüft.
+- **Berechtigungen:** API-Schlüssel (nur als SHA-256-Hash gespeichert, einmal angezeigt) mit Regeln je Verbindung und
+  Tabelle, Rollen Leser/Schreiber/Admin, gesperrte Spalten, Zeilenfilter (beim Anlegen erzwungen), Rate-Limit je Schlüssel,
+  Schreibschutz der Verbindung gilt auch hier. Änderungen und Ablehnungen im Protokoll.
+- **OpenAPI** je Schlüssel unter `/rest/v1/openapi.json`, nur mit den erlaubten Tabellen und Aktionen.
+- **Seite „API & Rechte“:** Schlüssel anlegen, sperren, löschen; Benutzung mit Beispielen; Protokoll.
+
+## Davor
 
 - **KI-Brücke:** optionale Felder `system` (eigener Systemprompt) und `json_schema` (strukturierte Ausgabe) für den
   Job Agent Web (CT 106). Ohne diese Felder verhält sich die Brücke wie bisher. Erlaubte Adressen per Drop-in

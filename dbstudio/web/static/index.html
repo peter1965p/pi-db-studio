@@ -31,6 +31,7 @@
     <button class="nav-eintrag" data-ansicht="editor" data-braucht="1">SQL-Editor</button>
     <button class="nav-eintrag" data-ansicht="austausch" data-braucht="1">Import &amp; Export</button>
     <div class="nav-sektion">SYSTEM</div>
+    <button class="nav-eintrag" data-ansicht="rest">API &amp; Rechte</button>
     <button class="nav-eintrag" data-ansicht="einstellungen">Einstellungen</button>
     <div id="verbindungskarte" class="versteckt"><b id="vk-name"></b><span class="gedimmt" id="vk-info"></span>
       <div style="margin-top:6px"><button class="knopf klein" id="vk-trennen">Trennen</button></div></div>
@@ -169,6 +170,29 @@
           <label class="feld">Format<select name="format"><option value="csv">CSV</option><option value="json">JSON</option><option value="xlsx">Excel</option><option value="sql">SQL-INSERT</option></select></label>
           <div class="leiste"><button class="knopf primaer" type="submit">⇩ Herunterladen</button></div>
         </form>
+      </div>
+    </section>
+
+    <!-- REST-API und Rechte -->
+    <section class="ansicht" id="v-rest">
+      <div style="display:flex;flex-direction:column;gap:12px;overflow:auto">
+        <form class="karte" id="f-rest" style="display:flex;flex-direction:column;gap:10px;max-width:900px">
+          <b>Neuer API-Schlüssel</b>
+          <div class="gitter">
+            <label class="feld">Name<input name="name" required placeholder="z. B. Auswertung Vertrieb"></label>
+            <label class="feld">Verbindung<select name="verbindung" id="rest-verbindung"></select></label>
+            <label class="feld">Tabelle (* = alle)<input name="tabelle" value="*"></label>
+            <label class="feld">Rolle<select name="rolle"><option value="leser">Leser (nur lesen)</option><option value="schreiber">Schreiber (lesen, anlegen, ändern)</option><option value="admin">Admin (alles inkl. löschen)</option></select></label>
+            <label class="feld">Gesperrte Spalten (Komma)<input name="spalten_gesperrt" placeholder="passwort, iban"></label>
+            <label class="feld">Zeilenfilter (spalte=wert, Komma)<input name="zeilenfilter" placeholder="mandant_id=3"></label>
+            <label class="feld">Anfragen pro Minute<input name="limit_minute" type="number" min="1" max="6000" value="120"></label>
+          </div>
+          <div class="leiste"><button class="knopf primaer" type="submit">Schlüssel erzeugen</button></div>
+          <div id="rest-geheim" class="karte" hidden style="border-color:var(--akzent)"></div>
+        </form>
+        <div class="karte"><b>Schlüssel</b><div class="tabelle-wrap" style="margin-top:8px;max-height:280px"><table class="daten" id="rest-liste"></table></div></div>
+        <div class="karte"><b>Benutzung</b><pre class="gedimmt" id="rest-beispiel" style="white-space:pre-wrap;margin:8px 0 0"></pre></div>
+        <div class="karte"><b>Protokoll</b> <span class="gedimmt">(Änderungen und Ablehnungen, neueste zuerst)</span><div class="tabelle-wrap" style="margin-top:8px;max-height:280px"><table class="daten" id="rest-protokoll"></table></div></div>
       </div>
     </section>
 

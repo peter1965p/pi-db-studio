@@ -74,6 +74,7 @@ const TITEL = {
   editor: ["SQL-Editor", "Strg+Enter führt aus (Markierung oder alles). Ändernde Befehle fragen nach."],
   austausch: ["Import & Export", "CSV, JSON, Excel und SQL."],
   einstellungen: ["Einstellungen", "KI-Anbieter und Schlüssel – der Schlüssel wird verschlüsselt gespeichert."],
+  rest: ["API & Rechte", "Generische REST-API für alle Tabellen. Zugriff nur mit Schlüssel und Regel: Verbindung, Tabelle, Aktionen, gesperrte Spalten, Zeilenfilter."],
 };
 function zeige(name) {
   $$(".nav-eintrag").forEach(b => b.classList.toggle("aktiv", b.dataset.ansicht === name));
@@ -82,6 +83,7 @@ function zeige(name) {
   if (name === "editor") editorAnzeigen();
   if (name === "diagramm") Diagramm.laden(zustand.schema);
   if (name === "einstellungen") einstellungenLaden();
+  if (name === "rest") restLaden();
   if (name === "austausch") exportTabellen();
 }
 $$(".nav-eintrag").forEach(b => b.onclick = () => !b.disabled && zeige(b.dataset.ansicht));
@@ -429,6 +431,51 @@ $("#f-einstellungen").onsubmit = async ev => {
   await api("/api/einstellungen", { body: Object.fromEntries(f) }); ev.target.elements.api_schluessel.value = ""; toast("Gespeichert."); einstellungenLaden();
 };
 $("#api-loeschen").onclick = async () => { await api("/api/einstellungen", { body: { api_schluessel_loeschen: true } }); einstellungenLaden(); };
+
+// --- REST-API und Rechte ------------------------------------------------------------------------------------------
+async function restLaden() {
+  const [d, prot] = await Promise.all([api("/api/rest/schluessel"), api("/api/rest/protokoll")]);
+  const namen = Object.fromEntries(zustand.verbindungen.map(v => [v.id, v.name]));
+  $("#rest-verbindung").innerHTML = zustand.verbindungen.map(v => `<option value="${esc(v.id)}">${esc(v.name)}</option>`).join("");
+  const regeltext = r => `${esc(namen[r.verbindung] || r.verbindung)} · ${esc(r.tabelle)} · ${esc(r.aktionen.join(", "))}`
+    + (r.spalten_gesperrt.length ? ` · ohne ${esc(r.spalten_gesperrt.join(", "))}` : "")
+    + (Object.keys(r.zeilenfilter).length ? ` · nur ${esc(Object.entries(r.zeilenfilter).map(([k, v]) => k + "=" + v).join(", "))}` : "");
+  $("#rest-liste").innerHTML = "<tr><th>Name</th><th>Schlüssel</th><th>Regeln</th><th>Limit/min</th><th>Zuletzt</th><th>Aktiv</th><th></th></tr>"
+    + (d.schluessel.map(k => `<tr><td>${esc(k.name)}</td><td><code>${esc(k.anfang)}…</code></td><td>${k.regeln.map(regeltext).join("<br>")}</td>
+      <td class="zahl">${k.limit_minute}</td><td>${esc((k.zuletzt || "–").replace("T", " ").slice(0, 16))}</td>
+      <td><input type="checkbox" data-aktiv="${esc(k.id)}" ${k.aktiv ? "checked" : ""}></td>
+      <td><button class="knopf gefahr klein" data-weg="${esc(k.id)}">Löschen</button></td></tr>`).join("")
+      || '<tr><td colspan="7" class="null">Noch keine Schlüssel.</td></tr>');
+  $$("[data-aktiv]").forEach(c => c.onchange = async () => { await api("/api/rest/schluessel/" + c.dataset.aktiv, { method: "PATCH", body: { aktiv: c.checked } }); toast(c.checked ? "Aktiviert." : "Gesperrt."); });
+  $$("[data-weg]").forEach(b => b.onclick = async () => { if (!confirm("Schlüssel endgültig löschen?")) return; await api("/api/rest/schluessel/" + b.dataset.weg, { method: "DELETE" }); restLaden(); });
+  $("#rest-protokoll").innerHTML = "<tr><th>Zeit</th><th>Schlüssel</th><th>Aktion</th><th>Tabelle</th><th>Status</th><th>Grund / betroffen</th></tr>"
+    + (prot.slice(0, 100).map(p => `<tr><td>${esc((p.zeit || "").replace("T", " ").slice(0, 19))}</td><td>${esc(p.name || p.schluessel || "–")}</td>
+      <td>${esc(p.aktion || p.methode || "")}</td><td>${esc(p.tabelle || p.pfad || "")}</td><td class="zahl">${p.status}</td>
+      <td>${esc(p.grund || (p.betroffen ?? ""))}</td></tr>`).join("") || '<tr><td colspan="6" class="null">Noch nichts.</td></tr>');
+  const vid = zustand.verbindungen[0]?.id || "VERBINDUNG";
+  $("#rest-beispiel").textContent = [
+    `curl -H "Authorization: Bearer pi_…" "${location.origin}/rest/v1/${vid}/kunden?ort=eq.Osnabrück&order=name.asc&limit=50"`,
+    `Filter: spalte=${d.operatoren.join("|")}.wert  oder  spalte=is.null / is.notnull   ·   select=a,b   ·   order=spalte.desc   ·   limit / offset`,
+    `Einzeln: GET/PATCH/DELETE …/{tabelle}/{primärschlüssel}   ·   Anlegen: POST …/{tabelle} mit JSON`,
+    `OpenAPI (nur die Tabellen des Schlüssels): ${location.origin}/rest/v1/openapi.json`].join("\n");
+}
+$("#f-rest").onsubmit = async ev => {
+  ev.preventDefault(); const f = new FormData(ev.target);
+  const liste = t => String(t || "").split(",").map(x => x.trim()).filter(Boolean);
+  const zeilenfilter = Object.fromEntries(liste(f.get("zeilenfilter")).map(x => { const [k, ...v] = x.split("="); return [k.trim(), v.join("=").trim()]; }));
+  try {
+    const r = await api("/api/rest/schluessel", { body: { name: f.get("name"), limit_minute: Number(f.get("limit_minute") || 120),
+      regeln: [{ verbindung: f.get("verbindung"), tabelle: f.get("tabelle") || "*", rolle: f.get("rolle"),
+                 spalten_gesperrt: liste(f.get("spalten_gesperrt")), zeilenfilter }] } });
+    const box = $("#rest-geheim");
+    box.innerHTML = `<b>Dein Schlüssel – nur jetzt sichtbar:</b><br><code id="rest-geheim-text" style="word-break:break-all">${esc(r.geheim)}</code>
+      <div class="leiste" style="margin-top:8px"><button class="knopf klein" type="button" id="rest-kopieren">Kopieren</button><button class="knopf klein" type="button" id="rest-zu">Ausblenden</button></div>`;
+    box.hidden = false;
+    $("#rest-kopieren").onclick = () => navigator.clipboard.writeText(r.geheim).then(() => toast("Kopiert."));
+    $("#rest-zu").onclick = () => { box.hidden = true; box.innerHTML = ""; };
+    ev.target.reset(); restLaden();
+  } catch (e) { toast(e.message, "fehler"); }
+};
 
 // --- Start --------------------------------------------------------------------------------------------------------
 async function start() {
