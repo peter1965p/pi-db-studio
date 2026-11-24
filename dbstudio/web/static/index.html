@@ -49,7 +49,7 @@
 
     <!-- Verbindungen -->
     <section class="ansicht aktiv" id="v-verbindungen">
-      <div class="leiste"><button class="knopf primaer" id="neu-verbindung">＋ Neue Verbindung</button></div>
+      <div class="leiste"><button class="knopf primaer" id="neu-verbindung">＋ Neue Verbindung</button><button class="knopf" id="demo-northwind" title="Microsofts klassische Beispieldatenbank, aus Access übernommen">🧪 Demo: Northwind</button></div>
       <div class="raster" id="verbindungsliste"></div>
     </section>
 
@@ -173,6 +173,14 @@
           <div class="leiste"><button class="knopf" type="button" id="sqlimport-vorschau">Vorschau</button><button class="knopf primaer" type="submit">Einspielen</button></div>
           <div id="sqlimport-hinweise" class="meldung versteckt"></div>
           <textarea id="sqlimport-text" readonly style="min-height:160px;font-family:var(--mono, monospace);font-size:12px"></textarea>
+        </form>
+        <form class="karte" id="f-access" style="display:flex;flex-direction:column;gap:10px">
+          <b>Access-Datenbank übernehmen (.mdb, .accdb)</b>
+          <span class="gedimmt">Ohne Access und ohne Windows: Tabellen und Daten in die geöffnete Verbindung, Primärschlüssel und Beziehungen aus den Namen (z. B. CategoryID → Categories), Fremdschlüssel nur, wenn der Bestand passt.</span>
+          <input type="file" name="datei" accept=".mdb,.accdb" required>
+          <label class="schalter"><input type="checkbox" name="beziehungen" checked> Beziehungen als Fremdschlüssel anlegen</label>
+          <div class="leiste"><button class="knopf" type="button" id="access-vorschau">Vorschau</button><button class="knopf primaer" type="submit">Übernehmen</button></div>
+          <div id="access-ergebnis" class="meldung versteckt"></div>
         </form>
         <form class="karte" id="f-export" style="display:flex;flex-direction:column;gap:10px">
           <b>Export</b>

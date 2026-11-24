@@ -20,7 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.background import BackgroundTask
 
-from .. import __version__, austausch, efcore, erm, ki, sqlimport, sqlschutz, treiber
+from .. import __version__, access, austausch, efcore, erm, ki, sqlimport, sqlschutz, treiber
 from ..treiber import ARTEN, GENERISCH, Spalte
 from . import rest
 from .speicher import Speicher, aus_umgebung
@@ -724,6 +724,51 @@ def erstelle_app(speicher: Speicher | None = None, cookie_secure: bool = True) -
         finally:
             e.schliessen()
         return FileResponse(pfad, filename=f"{name}.{format}", background=BackgroundTask(os.unlink, pfad))
+
+    @app.post("/api/demo/northwind")
+    def demo_northwind(s: Sitzung = Depends(sitzung)):
+        """Northwind (Access-Demo) als SQLite im Datenordner anlegen und als Verbindung speichern."""
+        try:
+            erg = access.demo_northwind(sp.ordner / "demo" / "northwind.db")
+        except Exception as e:
+            raise db_fehler(e)
+        vorhanden = next((v for v in sp.verbindungen() if v.get("datei") == erg["verbindung"]["datei"]), None)
+        v = vorhanden or sp.verbindung_speichern({**erg["verbindung"], "farbe": "#5aa0e6"})
+        return {"verbindung": v, "neu": erg["neu"], "tabellen": erg.get("tabellen"), "zeilen": erg.get("zeilen"),
+                "beziehungen": erg.get("beziehungen", [])}
+
+    @app.post("/api/v/{vid}/accessimport")
+    async def access_import(vid: str, datei: UploadFile = File(...), ausfuehren: bool = Form(False),
+                            beziehungen: bool = Form(True), schema_: str = Form("", alias="schema"), s: Sitzung = Depends(sitzung)):
+        """Access-Datei (.mdb/.accdb) lesen; Vorschau oder Übernahme in die geöffnete Verbindung."""
+        endung = Path(datei.filename or "").suffix.lower()
+        if endung not in (".mdb", ".accdb"):
+            raise HTTPException(400, "Erwartet .mdb oder .accdb.")
+        fd, pfad = tempfile.mkstemp(suffix=endung)
+        try:
+            with os.fdopen(fd, "wb") as f:
+                groesse = 0
+                while block := await datei.read(1024 * 1024):
+                    groesse += len(block)
+                    if groesse > 200 * 1024 * 1024:
+                        raise HTTPException(413, "Höchstens 200 MB.")
+                    f.write(block)
+            try:
+                tabellen = access.lesen(pfad)
+            except Exception as e:
+                raise HTTPException(400, f"Access-Datei nicht lesbar: {type(e).__name__}")
+            antwort = {"uebersicht": access.uebersicht(tabellen)}
+            if ausfuehren:
+                t, _ = verbindung(s, vid)
+                if t.schreibschutz:
+                    raise HTTPException(403, "Die Verbindung ist schreibgeschützt.")
+                try:
+                    antwort["ergebnis"] = access.importieren(t, schema_von(t, schema_), tabellen, beziehungen)
+                except Exception as e:
+                    raise db_fehler(e)
+            return antwort
+        finally:
+            Path(pfad).unlink(missing_ok=True)
 
     @app.post("/api/v/{vid}/sqlimport")
     async def sql_import(vid: str, datei: UploadFile = File(...), fremde: str = Form("ersatz"), ausfuehren: bool = Form(False),

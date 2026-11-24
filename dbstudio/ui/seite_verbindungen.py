@@ -147,7 +147,8 @@ class VerbindungenSeite(QWidget):
         self.setLayout(lay)
         self.kopf = Kopf("Verbindungen", "PostgreSQL, MySQL/MariaDB, SQLite, DuckDB und SQL Server – Passwörter liegen im Schlüsselbund.")
         lay.addWidget(self.kopf)
-        lay.addLayout(zeile(knopf("+ Neue Verbindung", self.neu, "primaer")))
+        lay.addLayout(zeile(knopf("+ Neue Verbindung", self.neu, "primaer"),
+                            knopf("🧪 Demo: Northwind", self.demo_northwind, tipp="Microsofts klassische Beispieldatenbank, aus Access übernommen")))
         self.raster = QGridLayout()
         self.raster.setSpacing(14)
         innen = QWidget()
@@ -202,6 +203,20 @@ class VerbindungenSeite(QWidget):
             self.liste.append(d.ergebnis)
             verbindungen.speichern(self.liste)
             self.zeichnen()
+
+    def demo_northwind(self):
+        from .. import access
+        datei = verbindungen.ordner() / "demo" / "northwind.db"
+        try:
+            erg = access.demo_northwind(datei)
+        except Exception as e:
+            from .bausteine import meldung
+            meldung(self, "Northwind", f"Ging nicht: {e}", True)
+            return
+        if not any(v.get("datei") == str(datei) for v in self.liste):
+            self.liste.append(verbindungen.neu(**erg["verbindung"], farbe="#5aa0e6"))
+            verbindungen.speichern(self.liste)
+        self.zeichnen()
 
     def bearbeiten(self, vid):
         d = VerbindungDialog(self, self._finde(vid))

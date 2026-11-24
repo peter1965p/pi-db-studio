@@ -435,6 +435,34 @@ async function sqlImport(ausfuehren) {
 $("#sqlimport-vorschau").onclick = () => sqlImport(false);
 $("#f-sqlimport").onsubmit = ev => { ev.preventDefault(); sqlImport(true); };
 
+// --- Access und Demo --------------------------------------------------------------------------------------------
+async function accessImport(ausfuehren) {
+  const f = $("#f-access"), fd = new FormData(f);
+  if (!fd.get("datei") || !fd.get("datei").name) { toast("Erst eine .mdb- oder .accdb-Datei wählen.", "fehler"); return; }
+  fd.set("beziehungen", f.elements.beziehungen.checked ? "true" : "false");
+  fd.append("ausfuehren", ausfuehren ? "true" : "false");
+  if (zustand.schema) fd.append("schema", zustand.schema);
+  try {
+    const r = await api(`/api/v/${zustand.vid}/accessimport`, { body: fd });
+    const box = $("#access-ergebnis"); box.classList.remove("versteckt");
+    const zeilen = r.uebersicht.map(t => `<div>${esc(t.name)} · ${t.zeilen} Zeilen · ${t.spalten.length} Spalten${t.pk ? " · PK " + esc(t.pk) : ""}</div>`).join("");
+    const e = r.ergebnis;
+    box.innerHTML = zeilen + (e ? `<hr><b>Übernommen:</b> ${e.tabellen} Tabellen, ${e.zeilen} Zeilen.<br>Fremdschlüssel: ${e.beziehungen.map(esc).join(", ") || "keine"}`
+      + (e.ausgelassen.length ? `<br><span class="gefahr">Ausgelassen: ${e.ausgelassen.map(esc).join("; ")}</span>` : "") : "");
+    if (e) toast(`${e.tabellen} Tabellen übernommen.`);
+  } catch (err) { toast(err.message, "fehler"); }
+}
+$("#access-vorschau").onclick = () => accessImport(false);
+$("#f-access").onsubmit = ev => { ev.preventDefault(); accessImport(true); };
+$("#demo-northwind").onclick = async () => {
+  try {
+    toast("Northwind wird angelegt …");
+    const r = await api("/api/demo/northwind", { body: {} });
+    toast(r.neu ? `Northwind: ${r.tabellen} Tabellen, ${r.zeilen} Zeilen, ${r.beziehungen.length} Beziehungen.` : "Northwind ist schon da.");
+    await verbindungenLaden();
+  } catch (e) { toast(e.message, "fehler"); }
+};
+
 // --- Einstellungen ------------------------------------------------------------------------------------------------
 async function einstellungenLaden() {
   const e = await api("/api/einstellungen"), f = $("#f-einstellungen");

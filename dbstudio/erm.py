@@ -527,7 +527,9 @@ def vorschlaege(m: Modell) -> list[Fremdschluessel]:
                 zn = ziel.name.lower()
                 if ziel.name == tab.name or len(ziel.pk) != 1:
                     continue
-                if zn in (stamm, stamm + "s", stamm + "n", stamm + "en", stamm + "e") or stamm in (zn.rstrip("s"), zn.rstrip("n")):
+                zn = re.sub(r"\W", "", zn)
+                plural_ies = stamm.endswith("y") and zn == stamm[:-1] + "ies"
+                if plural_ies or zn in (stamm, stamm + "s", stamm + "n", stamm + "en", stamm + "e") or stamm in (zn.rstrip("s"), zn.rstrip("n")):
                     erg.append(Fremdschluessel(tab.name, [s.name], ziel.name, ziel.pk))
                     break
     for f in erg:

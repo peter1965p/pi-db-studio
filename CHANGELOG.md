@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.3 – 2026-11-24
+
+- **Access-Import (.mdb, .accdb)** ohne Access und ohne Windows (Paket `access-parser`): echte Spaltentypen und
+  Primärschlüssel (auch zusammengesetzte), Währungsfelder korrekt umgerechnet, kaputte Datumswerte werden NULL,
+  beschädigte Tabellen erkannt und übersprungen. Beziehungen über die Namen (jetzt auch Plural „-ies“), als
+  Fremdschlüssel nur, wenn keine Verweise ins Leere zeigen. Web: „Import & Export“, mit Vorschau.
+- **Demo „Northwind“** (Desktop und Web: „🧪 Demo: Northwind“): Microsofts klassische Beispieldatenbank aus der
+  Access-Fassung – 8 Tabellen, 3.202 Zeilen, 6 Fremdschlüssel und 9 bekannte Abfragen als Views (Invoices,
+  Category Sales, Order Subtotals …).
+
 ## 0.4.2 – 2026-11-24
 
 - **Löschen mit Folgen-Analyse** (Desktop: Menü „…“, Web: „🗑 Löschen …“): Tabelle, Spalte oder Fremdschlüssel.

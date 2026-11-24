@@ -56,6 +56,12 @@ Filter `spalte=op.wert` mit `eq, neq, gt, gte, lt, lte, like` oder `is.null`/`is
 `limit`, `offset`. Einzeln: `GET/PATCH/DELETE …/{tabelle}/{pk}`, Anlegen: `POST …/{tabelle}`. Die OpenAPI-Beschreibung
 unter `/rest/v1/openapi.json` zeigt nur, was der Schlüssel darf.
 
+## Access und Northwind (0.4.3)
+
+Access-Dateien (.mdb, .accdb) lassen sich unter „Import & Export“ übernehmen. Die Demo „Northwind“ legt Microsofts
+klassische Beispieldatenbank als SQLite an. Die Access-Datei `dbstudio/demo/northwind.mdb` stammt aus den Testdaten
+des mdbtools-Projekts; Northwind selbst stellt Microsoft in `microsoft/sql-server-samples` unter MIT-Lizenz bereit.
+
 ## Tests
 
 ```bash
