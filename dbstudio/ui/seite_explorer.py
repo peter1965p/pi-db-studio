@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (QFileDialog, QHeaderView, QLineEdit, QMenu, QSpinBox, QSplitter, QTreeWidget,
+from PySide6.QtWidgets import (QComboBox, QFileDialog, QHeaderView, QLineEdit, QMenu, QSpinBox, QSplitter, QTreeWidget,
                                QTreeWidgetItem, QVBoxLayout, QWidget)
 
 from .. import austausch, verbindungen
@@ -29,6 +29,11 @@ class ExplorerSeite(QWidget):
         links = QWidget()
         lv = QVBoxLayout(links)
         lv.setContentsMargins(0, 0, 0, 0)
+        self.db_wahl = QComboBox()
+        self.db_wahl.setToolTip("Datenbank auf diesem Server – wechselt mit derselben Anmeldung")
+        self.db_wahl.activated.connect(self._datenbank_gewaehlt)
+        self.db_wahl.hide()
+        lv.addWidget(self.db_wahl)
         self.suche = QLineEdit()
         self.suche.setPlaceholderText("Im Baum suchen …")
         self.suche.setClearButtonEnabled(True)
@@ -103,11 +108,22 @@ class ExplorerSeite(QWidget):
             schema, hinweis = t.bestes_schema(gemerkt, zahlen)
             if schema:
                 t.setze_schema(schema)
-            return zahlen, schema, hinweis, t.objekte(schema) if schema else {}
+            try:
+                dbs = (t.datenbanken(), t.aktuelle_datenbank()) if t.art == "postgresql" else ([], "")
+            except Exception:
+                dbs = ([], "")
+            return zahlen, schema, hinweis, t.objekte(schema) if schema else {}, dbs
         arbeiter.starte(lauf, self._schemas_da, lambda f: self.status.setText(f"Fehler: {f}"))
 
     def _schemas_da(self, daten):
-        zahlen, std, hinweis, objekte = daten
+        zahlen, std, hinweis, objekte, (dbs, aktuell) = daten
+        self.db_wahl.blockSignals(True)
+        self.db_wahl.clear()
+        for d in dbs:
+            self.db_wahl.addItem(f"🗄 {d}", d)
+        self.db_wahl.setCurrentIndex(max(0, self.db_wahl.findData(aktuell)))
+        self.db_wahl.blockSignals(False)
+        self.db_wahl.setVisible(len(dbs) > 1)
         self._laedt_schema = True
         self.h.editor.setze_schemas(list(zahlen))
         for s, n in zahlen.items():
@@ -123,6 +139,11 @@ class ExplorerSeite(QWidget):
         self._laedt_schema = False
         self.status.setText(hinweis)
         self.h.schema_gewaehlt(std, objekte, merken=False)
+
+    def _datenbank_gewaehlt(self, _i=None):
+        name = self.db_wahl.currentData()
+        if name and self.h.t and name != self.h.cfg.get("datenbank"):
+            self.h.datenbank_wechseln(name)
 
     def _aufgeklappt(self, item):
         art = item.data(0, ROLLE)

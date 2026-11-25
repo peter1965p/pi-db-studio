@@ -90,6 +90,27 @@ def passwort(v: dict) -> str | None:
         return None
 
 
+_STANDARD_PORT = {"postgresql": "5432", "mysql": "3306", "mssql": "1433"}
+
+
+def _konto(v: dict) -> tuple:
+    return (v.get("art"), str(v.get("host") or "").strip().lower(),
+            str(v.get("port") or _STANDARD_PORT.get(v.get("art"), "")).strip(), str(v.get("benutzer") or "").strip())
+
+
+def passwort_gleiches_konto(v: dict, liste: list[dict] | None = None) -> str | None:
+    """Passwort einer anderen gespeicherten Verbindung mit demselben Server und Benutzer (andere Datenbank).
+    So muss man für dbstudio@server/aether und dbstudio@server/dbstudio_test nur einmal ein Passwort hinterlegen."""
+    if v.get("art") in ("sqlite", "duckdb") or not v.get("benutzer") or not v.get("host"):
+        return None
+    for x in liste if liste is not None else laden():
+        if x.get("id") != v.get("id") and _konto(x) == _konto(v):
+            pw = passwort(x)
+            if pw:
+                return pw
+    return None
+
+
 def setze_passwort(v: dict, pw: str | None) -> None:
     import keyring
     if pw:

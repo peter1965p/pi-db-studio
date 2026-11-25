@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.5 – 2026-11-25
+
+- **Datenbank-Umschalter (PostgreSQL):** Über dem Baum im Explorer stehen alle Datenbanken des Servers, auf die die
+  Anmeldung darf; ein Klick wechselt mit derselben Anmeldung. Die Statuszeile zeigt die aktuelle Datenbank.
+- **Passwort wiederverwenden:** Bleibt das Passwort-Feld leer, übernimmt DB Studio das Passwort einer gespeicherten
+  Verbindung mit demselben Server und Benutzer (eigene Kopie im Schlüsselbund). Ein geleertes Feld löscht kein
+  gespeichertes Passwort mehr.
+- `deploy/pg-admin-rolle.py`: legt eine Admin-Rolle für den ganzen Server an (Passwort verdeckt abgefragt, nur im
+  Schlüsselbund) und trägt die Verbindung „PostgreSQL-Server (Admin)“ ein.
+
 ## 0.4.4 – 2026-11-25
 
 - **Start mit Verbindung:** `python -m dbstudio --verbindung '{"art": "sqlite", "datei": "…"}' [--tabelle Orders]` –

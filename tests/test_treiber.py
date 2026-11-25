@@ -124,3 +124,11 @@ def test_generische_typen():
 def test_unbekannte_art():
     with pytest.raises(DBFehler):
         treiber.oeffne({"art": "oracle"})
+
+
+def test_postgres_listet_datenbanken_des_servers(db):
+    if db.art != "postgresql":
+        assert db.datenbanken() == []
+        return
+    alle = db.datenbanken()
+    assert db.aktuelle_datenbank() in alle and "template0" not in alle

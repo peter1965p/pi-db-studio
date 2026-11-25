@@ -204,6 +204,10 @@ class Treiber:
     def version(self) -> str:
         return ""
 
+    def datenbanken(self) -> list[str]:
+        """Datenbanken auf demselben Server, zu denen diese Anmeldung darf (leer: Umschalten nicht möglich)."""
+        return []
+
     # Bezeichner
     def zitiere(self, name: str) -> str:
         z = self.zitat
@@ -532,6 +536,14 @@ class PostgreSQL(Treiber):
 
     def version(self):
         return self.abfrage("SELECT version()").zeilen[0][0].split(" on ")[0]
+
+    def datenbanken(self):
+        return [r[0] for r in self.abfrage(
+            "SELECT datname FROM pg_database WHERE datallowconn AND NOT datistemplate "
+            "AND has_database_privilege(datname, 'CONNECT') ORDER BY datname").zeilen]
+
+    def aktuelle_datenbank(self):
+        return self.abfrage("SELECT current_database()").zeilen[0][0]
 
     def schemas(self):
         return [r[0] for r in self.abfrage(

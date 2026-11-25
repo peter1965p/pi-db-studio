@@ -153,7 +153,8 @@ class Hauptfenster(QMainWindow):
     def status_text(self) -> str:
         if not self.t:
             return ""
-        return f"{self.cfg.get('name')} · {self.cfg.get('_version', '')}" + (" · nur lesen" if self.t.schreibschutz else "")
+        db = self.cfg.get("datenbank") if self.cfg.get("art") == "postgresql" else ""
+        return f"{self.cfg.get('name')}{' · ' + db if db else ''} · {self.cfg.get('_version', '')}" + (" · nur lesen" if self.t.schreibschutz else "")
 
     def verbinden(self, cfg: dict):
         if self.explorer.modell.geaendert and not rueckfrage(self, "Ungespeicherte Änderungen", "Änderungen im Datenraster verwerfen?", "Verwerfen"):
@@ -190,6 +191,12 @@ class Hauptfenster(QMainWindow):
         self.diagramm.verbindung_gewechselt()
         self.zeige(self.explorer)
 
+    def datenbank_wechseln(self, name: str):
+        """Andere Datenbank auf demselben Server, gleiche Anmeldung (Passwort der Verbindung aus dem Schlüsselbund)."""
+        cfg = {k: v for k, v in self.cfg.items() if not k.startswith("_")}
+        cfg["datenbank"] = name
+        self.verbinden(cfg)
+
     def oeffne_von_aussen(self, werte: dict, tabelle: str | None = None) -> dict | None:
         """Start mit --verbindung (z. B. aus Visual Death Studio): Verbindung übernehmen bzw. wiederfinden, fehlt das
         Passwort, den Verbindungsdialog zeigen, dann verbinden und optional gleich die Tabelle öffnen."""
@@ -203,6 +210,10 @@ class Hauptfenster(QMainWindow):
             self.verbindungen.liste = liste
             verbindungen.speichern(liste)
             self.verbindungen.zeichnen()
+        if v["art"] not in treiber.DATEI_ARTEN and not verbindungen.passwort(v):
+            geerbt = verbindungen.passwort_gleiches_konto(v, self.verbindungen.liste)
+            if geerbt:
+                verbindungen.setze_passwort(v, geerbt)
         if v["art"] not in treiber.DATEI_ARTEN and not verbindungen.passwort(v):
             d = VerbindungDialog(self, v)
             if not d.exec():

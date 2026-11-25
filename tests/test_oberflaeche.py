@@ -206,3 +206,22 @@ def test_startargumente_lehnen_passwort_ab():
     assert a.verbindung["art"] == "sqlite" and a.tabelle == "Orders"
     with pytest.raises(SystemExit):
         argumente(["--verbindung", '{"art": "postgresql", "passwort": "geheim"}'])
+
+
+def test_passwort_von_verbindung_mit_gleichem_server_und_benutzer(qtbot, monkeypatch):
+    import keyring
+    ablage = {}
+    monkeypatch.setattr(keyring, "get_password", lambda d, k: ablage.get((d, k)))
+    monkeypatch.setattr(keyring, "set_password", lambda d, k, w: ablage.__setitem__((d, k), w))
+    alt = verbindungen.neu(name="Aether", art="postgresql", host="DB.local", port="", datenbank="aether", benutzer="dbstudio")
+    ablage[("db-studio", verbindungen.schluessel(alt))] = "geheim-123"
+    verbindungen.speichern([alt])
+    neu = verbindungen.neu(art="postgresql", host="db.local", port="5432", datenbank="dbstudio_test", benutzer="dbstudio")
+    assert verbindungen.passwort_gleiches_konto(neu) == "geheim-123"                    # Port 5432 = Standard, Host ohne Groß/klein
+    assert verbindungen.passwort_gleiches_konto(dict(neu, benutzer="andere")) is None
+    from dbstudio.ui.seite_verbindungen import VerbindungDialog
+    d = VerbindungDialog(None, neu)
+    qtbot.addWidget(d)
+    assert d.passwort() == "geheim-123"
+    d._speichern()
+    assert ablage[("db-studio", verbindungen.schluessel(d.ergebnis))] == "geheim-123"     # eigene Kopie

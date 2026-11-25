@@ -44,7 +44,8 @@ class VerbindungDialog(QDialog):
         self.db, self.benutzer = QLineEdit(v.get("datenbank", "")), QLineEdit(v.get("benutzer", ""))
         self.pw = QLineEdit()
         self.pw.setEchoMode(QLineEdit.Password)
-        self.pw.setPlaceholderText("liegt im Schlüsselbund – leer lassen = unverändert" if verbindungen.passwort(v) else "Passwort")
+        self.pw.setPlaceholderText("liegt im Schlüsselbund – leer lassen = unverändert" if verbindungen.passwort(v)
+                                   else "Passwort – leer: von gespeicherter Verbindung mit gleichem Server und Benutzer")
         self.pw.textEdited.connect(lambda _: setattr(self, "pw_geaendert", True))
         self.ssl = QComboBox()
         self.ssl.addItems(SSL)
@@ -109,7 +110,11 @@ class VerbindungDialog(QDialog):
         return v
 
     def passwort(self) -> str | None:
-        return self.pw.text() if self.pw_geaendert else verbindungen.passwort(self.v)
+        eigenes = self.pw.text() if self.pw_geaendert else verbindungen.passwort(self.v)
+        if eigenes:
+            return eigenes
+        # Leer: das Passwort einer gespeicherten Verbindung mit demselben Server und Benutzer übernehmen
+        return verbindungen.passwort_gleiches_konto(self.werte())
 
     def _testen(self):
         v, pw = self.werte(), self.passwort()
@@ -133,8 +138,12 @@ class VerbindungDialog(QDialog):
 
     def _speichern(self):
         self.ergebnis = self.werte()
-        if self.pw_geaendert:
-            verbindungen.setze_passwort(self.ergebnis, self.pw.text() or None)
+        if self.pw_geaendert and self.pw.text():
+            verbindungen.setze_passwort(self.ergebnis, self.pw.text())
+        elif not verbindungen.passwort(self.ergebnis):
+            geerbt = verbindungen.passwort_gleiches_konto(self.ergebnis)
+            if geerbt:  # eigene Kopie, damit die Verbindung auch allein funktioniert
+                verbindungen.setze_passwort(self.ergebnis, geerbt)
         self.accept()
 
 
