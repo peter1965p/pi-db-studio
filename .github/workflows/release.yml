@@ -1,3 +1,4 @@
+# Dateinamen ohne Version: So zeigen die Download-Links im README (releases/latest/download/…) immer auf die neueste.
 # Baut Pi DB Studio für Linux (AppImage, tar.gz) und Windows (Setup.exe, ZIP), sobald ein Tag v* gepusht wird,
 # prüft jedes Paket mit --selbsttest und hängt die Dateien an das GitHub-Release.
 name: Release
@@ -39,8 +40,8 @@ jobs:
           cp dbstudio/icon.png AppDir/usr/share/icons/hicolor/256x256/apps/pi-db-studio.png
           wget -q https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage -O appimagetool
           chmod +x appimagetool
-          ARCH=x86_64 ./appimagetool --appimage-extract-and-run AppDir "dist/PiDBStudio-${VERSION}-Linux-x86_64.AppImage"
-          tar -C dist -czf "dist/PiDBStudio-${VERSION}-Linux-x86_64.tar.gz" PiDBStudio
+          ARCH=x86_64 ./appimagetool --appimage-extract-and-run AppDir "dist/PiDBStudio-Linux-x86_64.AppImage"
+          tar -C dist -czf "dist/PiDBStudio-Linux-x86_64.tar.gz" PiDBStudio
           ( cd dist && sha256sum PiDBStudio-*.AppImage PiDBStudio-*.tar.gz > SHA256SUMS-Linux.txt )
       - uses: actions/upload-artifact@v4
         with:
@@ -78,7 +79,7 @@ jobs:
         run: |
           $v = python -c "import dbstudio; print(dbstudio.__version__)"
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DVersion=$v" packaging\windows\pi-db-studio.iss
-          Compress-Archive -Path dist\PiDBStudio -DestinationPath "dist\PiDBStudio-$v-Windows-x64-portabel.zip"
+          Compress-Archive -Path dist\PiDBStudio -DestinationPath "dist\PiDBStudio-Windows-x64-portabel.zip"
           Get-FileHash dist\PiDBStudio-*.exe, dist\PiDBStudio-*.zip -Algorithm SHA256 | ForEach-Object { "$($_.Hash.ToLower())  $(Split-Path $_.Path -Leaf)" } | Out-File -Encoding ascii dist\SHA256SUMS-Windows.txt
       - uses: actions/upload-artifact@v4
         with:

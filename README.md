@@ -24,16 +24,25 @@ PostgreSQL · MySQL/MariaDB · SQL Server · SQLite · DuckDB · Microsoft Acces
 
 ## Installation
 
-Fertige Pakete für jede Version stehen unter **[Releases](https://github.com/peter1965p/pi-db-studio/releases/latest)**. Python muss nicht installiert sein.
+<div align="center">
+
+[![Windows – Setup](https://img.shields.io/badge/Windows-Setup.exe%20herunterladen-4c8dff?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/peter1965p/pi-db-studio/releases/latest/download/PiDBStudio-Windows-Setup.exe)
+[![Linux – AppImage](https://img.shields.io/badge/Linux-AppImage%20herunterladen-f5a623?style=for-the-badge&logo=linux&logoColor=white)](https://github.com/peter1965p/pi-db-studio/releases/latest/download/PiDBStudio-Linux-x86_64.AppImage)
+
+</div>
+
+Python muss nicht installiert sein. Alle Dateien jeder Version: **[Releases](https://github.com/peter1965p/pi-db-studio/releases)**.
 
 | System | Datei | So geht's |
 |---|---|---|
-| **Linux** (Ubuntu, Debian, Fedora, Arch, openSUSE, Mint …) | `PiDBStudio-<version>-Linux-x86_64.AppImage` | `chmod +x PiDBStudio-*.AppImage && ./PiDBStudio-*.AppImage` |
-| Linux ohne FUSE / zum Entpacken | `PiDBStudio-<version>-Linux-x86_64.tar.gz` | entpacken, `PiDBStudio/PiDBStudio` starten |
-| **Windows 10/11** | `PiDBStudio-<version>-Windows-Setup.exe` | Installer mit Startmenü-Eintrag, auf Wunsch ohne Admin-Rechte |
-| Windows portabel | `PiDBStudio-<version>-Windows-x64-portabel.zip` | entpacken, `PiDBStudio.exe` starten – z. B. vom USB-Stick |
+| **Windows 10/11** | [`PiDBStudio-Windows-Setup.exe`](https://github.com/peter1965p/pi-db-studio/releases/latest/download/PiDBStudio-Windows-Setup.exe) | Installer mit Startmenü-Eintrag, auf Wunsch ohne Admin-Rechte |
+| Windows portabel | [`PiDBStudio-Windows-x64-portabel.zip`](https://github.com/peter1965p/pi-db-studio/releases/latest/download/PiDBStudio-Windows-x64-portabel.zip) | entpacken, `PiDBStudio.exe` starten – z. B. vom USB-Stick |
+| **Linux** (Ubuntu, Debian, Fedora, Arch, openSUSE, Mint …) | [`PiDBStudio-Linux-x86_64.AppImage`](https://github.com/peter1965p/pi-db-studio/releases/latest/download/PiDBStudio-Linux-x86_64.AppImage) | `chmod +x PiDBStudio-*.AppImage && ./PiDBStudio-*.AppImage` |
+| Linux zum Entpacken | [`PiDBStudio-Linux-x86_64.tar.gz`](https://github.com/peter1965p/pi-db-studio/releases/latest/download/PiDBStudio-Linux-x86_64.tar.gz) | entpacken, `PiDBStudio/PiDBStudio` starten |
 
 Prüfsummen liegen als `SHA256SUMS-*.txt` daneben. Jedes Paket wird beim Bauen automatisch mit einem Selbsttest gestartet (Treiber, Oberfläche, Vorlagen) – erst dann kommt es ins Release.
+
+> **Windows meldet „Der Computer wurde durch Windows geschützt“?** Das Programm ist (noch) nicht signiert. „Weitere Informationen“ → „Trotzdem ausführen“.
 
 > **AppImage startet nicht?** Auf manchen Systemen fehlt `libfuse2` (Ubuntu 22.04+: `sudo apt install libfuse2`) – oder einfach das tar.gz nehmen.
 
