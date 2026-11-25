@@ -270,6 +270,12 @@ class ExplorerSeite(QWidget):
             m.addAction("Öffnen (wechselt in diese Datenbank)", lambda: self.h.datenbank_wechseln(art[1], (art[2], art[3])))
             m.exec(self.baum.viewport().mapToGlobal(punkt))
             return
+        if art and art[0] in ("schema", "gruppe"):
+            m = QMenu(self)
+            m.addAction("✨ Vorlage einspielen …", self.vorlage_einspielen).setEnabled(not self.h.t.schreibschutz)
+            m.addAction("Aktualisieren", self.neu_laden)
+            m.exec(self.baum.viewport().mapToGlobal(punkt))
+            return
         if not art or art[0] not in ("tabellen", "views"):
             return
         m = QMenu(self)
@@ -304,22 +310,51 @@ class ExplorerSeite(QWidget):
         m.exec(self.baum.viewport().mapToGlobal(punkt))
 
     def datenbank_neu(self):
-        from PySide6.QtWidgets import QInputDialog
+        """Neue Datenbank mit Vorlage oder KI-Entwurf: anlegen, Schema einspielen, hinwechseln."""
+        from .dialog_vorlage import VorlagenDialog
         t = self.h.t
-        name, ok = QInputDialog.getText(self, "Neue Datenbank", "Name der Datenbank:")
-        if not ok or not name.strip():
-            return
         try:
             rollen = t.rollen()
         except Exception:
             rollen = []
-        besitzer, ok = QInputDialog.getItem(self, "Neue Datenbank", f"Besitzer von „{name.strip()}“:",
-                                            [self.h.cfg.get("benutzer", "")] + [r for r in rollen if r != self.h.cfg.get("benutzer")], 0, False)
-        if not ok:
+        d = VorlagenDialog(self, t.art, neu=True, rollen=rollen, benutzer=self.h.cfg.get("benutzer", ""))
+        if not d.exec():
             return
-        arbeiter.starte(lambda: t.datenbank_anlegen(name, besitzer if besitzer != self.h.cfg.get("benutzer") else ""),
-                        lambda sql: (self.status.setText(f"Angelegt: {sql}"), self.neu_laden()),
-                        lambda f: meldung(self, "Neue Datenbank", f, True))
+        name, besitzer, anweisungen = d.ergebnis()
+
+        def lauf():
+            t.datenbank_anlegen(name, besitzer)
+            if anweisungen:
+                from .. import vorlagen
+                neben = self.h.nebenverbindung(name)
+                if besitzer:  # Tabellen sollen der Besitzer-Rolle gehören, nicht dem Admin
+                    neben.abfrage(f"SET ROLE {neben.zitiere(besitzer)}")
+                vorlagen.einspielen(neben, anweisungen)
+            return len(anweisungen)
+
+        def da(n):
+            self.h.nebenverbindungen_schliessen()
+            self.status.setText(f"Datenbank {name} angelegt" + (f", {n} Anweisungen eingespielt" if n else ""))
+            self.h.datenbank_wechseln(name)
+        self.status.setText(f"Lege {name} an …")
+        arbeiter.starte(lauf, da, lambda f: meldung(self, "Neue Datenbank", f"{f}\n\nFalls die Datenbank schon angelegt wurde, "
+                                                                       "steht sie leer im Baum.", True))
+
+    def vorlage_einspielen(self):
+        """Vorlage oder KI-Entwurf in die aktuelle Datenbank (alle Datenbankarten, z. B. SQLite)."""
+        from .. import vorlagen
+        from .dialog_vorlage import VorlagenDialog
+        t = self.h.t
+        if t is None:
+            return
+        d = VorlagenDialog(self, t.art, neu=False)
+        if not d.exec():
+            return
+        _, _, anweisungen = d.ergebnis()
+        arbeiter.starte(lambda: vorlagen.einspielen(t, anweisungen),
+                        lambda n: (self.status.setText(f"{n} Anweisungen eingespielt"), self.neu_laden()),
+                        lambda f: meldung(self, "Vorlage einspielen", f"{f}\n\nNichts wurde übernommen (Transaktion zurückgenommen)."
+                                          if t.art != "mysql" else str(f), True))
 
     def datenbank_eigenschaften(self, db):
         t = self.h.t

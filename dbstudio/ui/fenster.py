@@ -15,10 +15,11 @@ from .seite_diagramm import DiagrammSeite
 from .seite_editor import EditorSeite
 from .seite_einstellungen import EinstellungenSeite
 from .seite_explorer import ExplorerSeite
+from .seite_server import ServerSeite
 from .seite_verbindungen import VerbindungenSeite
 
 NAV = [("ARBEIT", None), ("Verbindungen", "verbindungen"), ("Datenbank", "explorer"), ("Diagramm", "diagramm"), ("SQL-Editor", "editor"),
-       ("Import && Kopieren", "austausch"), ("SYSTEM", None), ("Einstellungen", "einstellungen")]
+       ("Import && Kopieren", "austausch"), ("SYSTEM", None), ("Server", "server"), ("Einstellungen", "einstellungen")]
 
 
 class Hauptfenster(QMainWindow):
@@ -52,8 +53,10 @@ class Hauptfenster(QMainWindow):
         self.austausch = AustauschSeite(self)
         self.diagramm = DiagrammSeite(self)
         self.einstellungen = EinstellungenSeite(self)
+        self.server = ServerSeite(self)
         self.seiten = {"verbindungen": self.verbindungen, "explorer": self.explorer, "diagramm": self.diagramm, "editor": self.editor,
-                       "austausch": self.austausch, "einstellungen": self.einstellungen}
+                       "austausch": self.austausch, "server": self.server,
+                       "einstellungen": self.einstellungen}
         for s in self.seiten.values():
             self.stapel.addWidget(s)
         self.austausch.ziele_auffuellen()
@@ -198,6 +201,7 @@ class Hauptfenster(QMainWindow):
             f()
         self.austausch.verbindung_gewechselt()
         self.diagramm.verbindung_gewechselt()
+        self.server.verbindung_gewechselt()
         self.zeige(self.explorer)
 
     def datenbank_wechseln(self, name: str, tabelle: tuple | None = None, nach=None):
@@ -275,6 +279,7 @@ class Hauptfenster(QMainWindow):
         self.verbindungen.markiere("")
         self.explorer.baum.clear()
         self.diagramm.verbindung_gewechselt()
+        self.server.verbindung_gewechselt()
         for s in (self.explorer, self.diagramm, self.editor, self.austausch):
             s.kopf.status("")
 

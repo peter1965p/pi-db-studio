@@ -81,6 +81,8 @@ def _aufgabe(art: str, kontext: str, **w) -> str:
                 "Welche Fremdschlüssel fehlen vermutlich (anhand von Spaltennamen und Typen)? Nenne je Vorschlag kurz den "
                 "Grund und liefere alle als EINEN ```sql```-Block mit ALTER TABLE … ADD CONSTRAINT … FOREIGN KEY "
                 "(im Dialekt der Datenbank). Schlage nur Beziehungen zwischen vorhandenen Spalten vor.")
+    if art == "vorlage":  # Datenmodell für eine neue Datenbank (vorlagen.ki_aufgabe baut die Aufgabe)
+        return w["aufgabe"]
     raise ValueError(art)
 
 

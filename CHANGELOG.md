@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.5.0 – 2026-11-25
+
+- **Seite „Server“** (angelehnt an die Administration der MySQL Workbench, im Look von Pi DB Studio) für PostgreSQL und
+  MySQL/MariaDB:
+  - *Status:* Version, Laufzeit, Verbindungen, Cache-Trefferquote, Transaktionen, Deadlocks, Datenbanken nach Größe.
+  - *Client-Verbindungen:* wer mit welcher Abfrage verbunden ist (alle 5 s aktuell), Abfrage abbrechen, Verbindung trennen.
+  - *Benutzer und Rechte:* Rollen anlegen, bearbeiten (Login, DB anlegen, Rollen anlegen, Superuser), Passwort setzen,
+    Zugriff je Datenbank erlauben/entziehen, löschen mit Folgen (Besitz, Verbindungen, Mitglieder). PostgreSQL-Passwörter
+    gehen als SCRAM-SHA-256-Verifier – der Klartext erreicht den Server nicht.
+  - *Variablen:* alle Servereinstellungen mit Suche, „nur geänderte“, Hinweis auf nötigen Neustart.
+  - *Sicherung:* SQL-Dump einer Datenbank mit pg_dump/mysqldump, Passwort nur über die Umgebung.
+- **Vorlagen-Engine für neue Datenbanken:** acht Vorlagen (Online-Shop, CRM, Blog/CMS, Lager & Warenwirtschaft,
+  Ticketsystem, Vereinsverwaltung, Personal & Zeiterfassung, Projekte & Aufgaben) oder **KI-Entwurf** aus eigener
+  Beschreibung bzw. KI-Anpassung einer Vorlage, optional mit Beispieldaten. Vorschau mit Tabellen, Beziehungen und dem
+  SQL im Dialekt der Datenbank (änderbar), dann Anlegen. KI-Antworten werden geprüft und bereinigt (Namen, Typen,
+  Verweise, Mengen). SQL für PostgreSQL, MySQL/MariaDB, SQLite, SQL Server und DuckDB; Abhängigkeitsreihenfolge,
+  Zyklen per ALTER TABLE, Indizes auf Fremdschlüssel. Im Serverbaum bei „＋ Datenbank“, sonst Rechtsklick auf ein Schema
+  → „Vorlage einspielen“. Ohne eingestellten KI-Anbieter nimmt der Dialog den ersten verfügbaren (z. B. Claude Code).
+
 ## 0.4.6 – 2026-11-25
 
 - **Serverbaum (PostgreSQL):** Oben der Server, darunter alle Datenbanken, auf die die Anmeldung darf; die aktuelle
