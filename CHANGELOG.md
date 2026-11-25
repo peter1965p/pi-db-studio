@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.4 – 2026-11-25
+
+- **Start mit Verbindung:** `python -m dbstudio --verbindung '{"art": "sqlite", "datei": "…"}' [--tabelle Orders]` –
+  vorhandene Verbindung mit gleichem Ziel wird wiederverwendet, sonst angelegt; fehlt bei Servern das Passwort, öffnet
+  sich der Verbindungsdialog. Passwörter werden über die Kommandozeile abgelehnt. Genutzt von Visual Death Studio
+  („🛠 In DB Studio bearbeiten“).
+
 ## 0.4.3 – 2026-11-24
 
 - **Access-Import (.mdb, .accdb)** ohne Access und ohne Windows (Paket `access-parser`): echte Spaltentypen und

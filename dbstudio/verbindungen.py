@@ -51,6 +51,33 @@ def neu(**werte) -> dict:
     return v
 
 
+_DATEI = {"sqlite", "duckdb"}
+_VON_AUSSEN = ("name", "art", "host", "port", "datenbank", "benutzer", "datei")
+
+
+def uebernehmen(liste: list[dict], werte: dict) -> tuple[list[dict], dict, bool]:
+    """Verbindung von außen (z. B. aus Visual Death Studio): vorhandene mit gleichem Ziel wiederverwenden, sonst neu
+    anlegen. Gibt (Liste, Verbindung, neu?) zurück. Passwörter kommen nie von außen – die liegen im Schlüsselbund."""
+    art = werte.get("art")
+    if art not in ("postgresql", "mysql", "sqlite", "duckdb", "mssql"):
+        raise ValueError(f"Unbekannte Datenbankart: {art}")
+
+    def ziel(v):
+        if art in _DATEI:
+            return str(Path(v.get("datei") or "").expanduser().resolve())
+        return (str(v.get("host") or "").lower(), str(v.get("port") or ""), v.get("datenbank") or "", v.get("benutzer") or "")
+    for v in liste:
+        if v.get("art") == art and ziel(v) == ziel(werte):
+            return liste, v, False
+    v = neu(**{k: str(werte[k]) for k in _VON_AUSSEN if werte.get(k) not in (None, "", 0)})
+    if art in _DATEI:
+        v["datei"] = ziel(werte)
+        v["farbe"] = v.get("farbe") or "#3ecf8e"
+    if not v.get("name"):
+        v["name"] = Path(v["datei"]).name if art in _DATEI else f"{v.get('benutzer')}@{v.get('host')}/{v.get('datenbank')}"
+    return liste + [v], v, True
+
+
 def schluessel(v: dict) -> str:
     return f"verbindung:{v['id']}"
 

@@ -29,6 +29,7 @@ class Hauptfenster(QMainWindow):
         self.resize(1440, 880)
         self.t: treiber.Treiber | None = None
         self.cfg: dict = {}
+        self._danach_tabelle: str | None = None
         self.thema = verbindungen.einstellungen().get("thema", "dunkel")
         self._thema_setzen()
 
@@ -182,9 +183,37 @@ class Hauptfenster(QMainWindow):
         for s in (self.explorer, self.diagramm, self.editor, self.austausch):
             s.kopf.status(self.status_text(), "pillWarn" if t.schreibschutz else "pill")
         self.explorer.neu_laden()
+        if self._danach_tabelle:
+            tab, self._danach_tabelle = self._danach_tabelle, None
+            self.explorer.oeffnen(t.aktuelles_schema or t.standard_schema(), tab)
         self.austausch.verbindung_gewechselt()
         self.diagramm.verbindung_gewechselt()
         self.zeige(self.explorer)
+
+    def oeffne_von_aussen(self, werte: dict, tabelle: str | None = None) -> dict | None:
+        """Start mit --verbindung (z. B. aus Visual Death Studio): Verbindung übernehmen bzw. wiederfinden, fehlt das
+        Passwort, den Verbindungsdialog zeigen, dann verbinden und optional gleich die Tabelle öffnen."""
+        from .seite_verbindungen import VerbindungDialog
+        try:
+            liste, v, neu = verbindungen.uebernehmen(self.verbindungen.liste, werte)
+        except ValueError as e:
+            meldung(self, "Verbindung", str(e), True)
+            return None
+        if neu:
+            self.verbindungen.liste = liste
+            verbindungen.speichern(liste)
+            self.verbindungen.zeichnen()
+        if v["art"] not in treiber.DATEI_ARTEN and not verbindungen.passwort(v):
+            d = VerbindungDialog(self, v)
+            if not d.exec():
+                return None
+            v = d.ergebnis
+            self.verbindungen.liste = [d.ergebnis if x["id"] == v["id"] else x for x in self.verbindungen.liste]
+            verbindungen.speichern(self.verbindungen.liste)
+            self.verbindungen.zeichnen()
+        self._danach_tabelle = tabelle
+        self.verbinden(v)
+        return v
 
     def _nicht_verbunden(self, fehler):
         self.aktiv_name.setText(self.cfg.get("name") if self.t else "Nicht verbunden")

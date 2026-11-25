@@ -171,3 +171,38 @@ def test_thema_wechseln(qtbot, fenster):
     vorher = fenster.thema
     fenster._thema_wechseln()
     assert fenster.thema != vorher
+
+
+# --- Start von außen (Visual Death Studio: „In DB Studio bearbeiten“) ---------------------------------------------------
+
+def test_von_aussen_vorhandene_verbindung_wiederverwenden_und_tabelle_oeffnen(qtbot, fenster):
+    v = fenster.oeffne_von_aussen({"art": "sqlite", "datei": fenster.v["datei"], "name": "aus VDS"}, "artikel")
+    assert v["id"] == fenster.v["id"] and len(fenster.verbindungen.liste) == 1
+    qtbot.waitUntil(lambda: fenster.explorer.modell.rowCount() == 200, timeout=15000)
+    assert fenster.explorer.tabelle_name == "artikel"
+
+
+def test_von_aussen_neue_verbindung_ohne_passwort_im_speicher(qtbot, fenster, tmp_path):
+    neu = tmp_path / "andere.db"
+    treiber.oeffne({"art": "sqlite", "datei": str(neu)}).schliessen()
+    v = fenster.oeffne_von_aussen({"art": "sqlite", "datei": str(neu)})
+    qtbot.waitUntil(lambda: fenster.t is not None, timeout=15000)
+    assert v["name"] == "andere.db" and len(verbindungen.laden()) == 2
+    assert "passwort" not in (verbindungen.ordner() / "verbindungen.json").read_text()
+
+
+def test_von_aussen_server_ohne_passwort_zeigt_dialog(qtbot, fenster, monkeypatch):
+    from dbstudio.ui import seite_verbindungen
+    gezeigt = []
+    monkeypatch.setattr(seite_verbindungen.VerbindungDialog, "exec", lambda self: gezeigt.append(self.v["host"]) or 0)
+    assert fenster.oeffne_von_aussen({"art": "postgresql", "host": "db.local", "port": 5432, "datenbank": "shop", "benutzer": "app"}) is None
+    assert gezeigt == ["db.local"]
+    assert any(v.get("host") == "db.local" for v in verbindungen.laden())     # gemerkt, Passwort trägt man im Dialog ein
+
+
+def test_startargumente_lehnen_passwort_ab():
+    from dbstudio.__main__ import argumente
+    a = argumente(["--verbindung", '{"art": "sqlite", "datei": "/x.db"}', "--tabelle", "Orders", "-platform", "offscreen"])
+    assert a.verbindung["art"] == "sqlite" and a.tabelle == "Orders"
+    with pytest.raises(SystemExit):
+        argumente(["--verbindung", '{"art": "postgresql", "passwort": "geheim"}'])
