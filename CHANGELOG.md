@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.1 – 2026-11-25
+
+- **KI einrichten:** Ist noch kein KI-Anbieter gewählt, fragt DB Studio bei der ersten KI-Nutzung (SQL-Assistent und
+  Vorlagen) nach – Claude-Abo (Pro/Max über Claude Code), Anthropic-API-Schlüssel (landet im Schlüsselbund) oder lokal
+  mit Ollama. Nie mehr still gewählt; die Wahl bleibt gespeichert und ist unter Einstellungen → KI änderbar.
+
 ## 0.5.0 – 2026-11-25
 
 - **Seite „Server“** (angelehnt an die Administration der MySQL Workbench, im Look von Pi DB Studio) für PostgreSQL und

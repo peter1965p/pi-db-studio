@@ -81,7 +81,9 @@ def test_zyklische_verweise_werden_nachgetragen():
 def test_dialog_vorschau_ki_und_ergebnis(qtbot, monkeypatch):
     from dbstudio import ki
     from dbstudio.ui import arbeiter
+    from dbstudio import verbindungen
     from dbstudio.ui.dialog_vorlage import KI_EIGEN, VorlagenDialog
+    verbindungen.setze_einstellungen({"ki_anbieter": "claude-code"})       # sonst fragt der Dialog „KI einrichten“
     d = VorlagenDialog(None, "postgresql", neu=True, rollen=["app"], benutzer="peter")
     qtbot.addWidget(d)
     d.vorlage.setCurrentIndex(d.vorlage.findData("shop"))
@@ -102,3 +104,28 @@ def test_dialog_vorschau_ki_und_ergebnis(qtbot, monkeypatch):
     d.besitzer.setCurrentIndex(1)
     name, besitzer, anweisungen = d.ergebnis()
     assert name == "verleih" and besitzer == "app" and anweisungen[0].startswith('CREATE TABLE "raeder"')
+
+
+def test_ohne_anbieter_wird_gefragt_und_gemerkt(qtbot, monkeypatch):
+    from dbstudio import ki, verbindungen
+    from dbstudio.ui import bausteine
+    monkeypatch.setattr(ki, "claude_pfad", lambda: "/usr/bin/claude")
+    monkeypatch.setattr(ki, "anbieter_liste", lambda: [("claude-api", "Claude (API)"), ("claude-code", "Abo"), ("ollama:x", "Lokal: x")])
+    gesetzt = []
+    monkeypatch.setattr(ki, "setze_api_schluessel", gesetzt.append)
+    monkeypatch.setattr(ki, "api_schluessel", lambda: None)
+    gezeigt = []
+
+    def exec_(self):
+        gezeigt.append(self)
+        assert self.abo.isChecked() and self.lokal.isEnabled()          # Abo vorgewählt, wenn Claude Code da ist
+        self.api.setChecked(True)
+        self._ok()
+        assert not self.result() and "API-Schlüssel" in self.fehler.text()   # ohne Schlüssel geht es nicht weiter
+        self.schluessel.setText("sk-ant-test")
+        self._ok()
+        return self.result()
+    monkeypatch.setattr(bausteine.KiWahlDialog, "exec", exec_)
+    assert bausteine.ki_anbieter_klaeren(None) == ("claude-api", "")
+    assert gesetzt == ["sk-ant-test"] and verbindungen.einstellungen()["ki_anbieter"] == "claude-api"
+    assert bausteine.ki_anbieter_klaeren(None) == ("claude-api", "") and len(gezeigt) == 1     # nur einmal gefragt

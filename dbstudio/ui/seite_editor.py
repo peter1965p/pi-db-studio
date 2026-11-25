@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (QComboBox, QFileDialog, QFrame, QMenu, QPlainText
 
 from .. import austausch, ki, sqlschutz, treiber, verbindungen
 from . import arbeiter
-from .bausteine import Kopf, karte, knopf, label, leiste, meldung, rueckfrage, tabelle, zeile
+from .bausteine import Kopf, karte, ki_anbieter_klaeren, knopf, label, leiste, meldung, rueckfrage, tabelle, zeile
 from .editor import SqlEditor
 from .raster import ErgebnisModell
 from .schalter import Schalter
@@ -375,8 +375,10 @@ class EditorSeite(QWidget):
         if not self.h.t:
             meldung(self, "Keine Verbindung", "Die KI braucht das Schema einer verbundenen Datenbank.")
             return
-        e = verbindungen.einstellungen()
-        anbieter, modell = e.get("ki_anbieter", "claude-api"), e.get("ki_modell", "")
+        gewaehlt = ki_anbieter_klaeren(self)
+        if not gewaehlt:
+            return
+        anbieter, modell = gewaehlt
         werte = {}
         if art == "sql":
             werte["text"] = self.ki_frage.toPlainText().strip()

@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QFormLayout, QHBox
 
 from .. import ki, treiber, verbindungen, vorlagen
 from . import arbeiter
-from .bausteine import knopf, label, meldung, zeile
+from .bausteine import ki_anbieter_klaeren, knopf, label, meldung, zeile
 
 KI_EIGEN = "__ki__"
 
@@ -55,11 +55,7 @@ class VorlagenDialog(QDialog):
         links.addWidget(self.beispiele)
         e = verbindungen.einstellungen()
         self.anbieter, self.ki_modell = e.get("ki_anbieter") or "", e.get("ki_modell", "")
-        if not self.anbieter or (self.anbieter == "claude-api" and not ki.api_schluessel()):
-            # Nichts eingestellt (oder API ohne Schlüssel): den ersten Anbieter nehmen, der auf diesem Rechner geht
-            vorhanden = [k for k, _ in ki.anbieter_liste() if k != "claude-api" or ki.api_schluessel()]
-            self.anbieter = vorhanden[0] if vorhanden else "claude-api"
-        name = dict(ki.anbieter_liste()).get(self.anbieter, self.anbieter) if hasattr(ki, "anbieter_liste") else self.anbieter
+        name = dict(ki.anbieter_liste()).get(self.anbieter, self.anbieter) if self.anbieter else "wird beim ersten Mal gefragt"
         self.k_ki = knopf("✨ Mit KI entwerfen", self.mit_ki, "primaer")
         links.addLayout(zeile(knopf("Vorschau", self.vorschau), self.k_ki))
         links.addWidget(label(f"KI: {name} (Einstellungen). An die KI gehen nur Vorlage und Beschreibung, keine Daten.", "gedimmt", True))
@@ -121,6 +117,10 @@ class VorlagenDialog(QDialog):
         if not wunsch and not basis:
             self.wunsch.setFocus()
             return self.status.setText("Beschreibe kurz, was die Datenbank können soll.")
+        gewaehlt = ki_anbieter_klaeren(self)
+        if not gewaehlt:
+            return
+        self.anbieter, self.ki_modell = gewaehlt
         aufgabe = vorlagen.ki_aufgabe(wunsch, basis, treiber.ARTEN.get(self.art, self.art), self.beispiele.isChecked())
         self.k_ki.setEnabled(False)
         self.status.setText("Die KI entwirft das Schema … (das dauert je nach Modell bis zu einer Minute)")
