@@ -29,7 +29,9 @@ class Hauptfenster(QMainWindow):
         self.resize(1440, 880)
         self.t: treiber.Treiber | None = None
         self.cfg: dict = {}
-        self._danach_tabelle: str | None = None
+        self._danach_tabelle = None   # Tabellenname oder (Schema, Tabelle), nach dem Verbinden öffnen
+        self._danach = None
+        self._neben: dict = {}         # Nebenverbindungen je Datenbank (Serverbaum)
         self.thema = verbindungen.einstellungen().get("thema", "dunkel")
         self._thema_setzen()
 
@@ -169,6 +171,7 @@ class Hauptfenster(QMainWindow):
         arbeiter.starte(lauf, lambda d: self._verbunden(cfg, *d), self._nicht_verbunden)
 
     def _verbunden(self, cfg, t, version):
+        self.nebenverbindungen_schliessen()
         if self.t:
             self.t.schliessen()
         self.t, self.cfg = t, dict(cfg, _version=version)
@@ -186,16 +189,45 @@ class Hauptfenster(QMainWindow):
         self.explorer.neu_laden()
         if self._danach_tabelle:
             tab, self._danach_tabelle = self._danach_tabelle, None
-            self.explorer.oeffnen(t.aktuelles_schema or t.standard_schema(), tab)
+            if isinstance(tab, tuple):
+                self.explorer.oeffnen(*tab)
+            else:
+                self.explorer.oeffnen(t.aktuelles_schema or t.standard_schema(), tab)
+        if self._danach:
+            f, self._danach = self._danach, None
+            f()
         self.austausch.verbindung_gewechselt()
         self.diagramm.verbindung_gewechselt()
         self.zeige(self.explorer)
 
-    def datenbank_wechseln(self, name: str):
-        """Andere Datenbank auf demselben Server, gleiche Anmeldung (Passwort der Verbindung aus dem Schlüsselbund)."""
+    def datenbank_wechseln(self, name: str, tabelle: tuple | None = None, nach=None):
+        """Andere Datenbank auf demselben Server, gleiche Anmeldung (Passwort der Verbindung aus dem Schlüsselbund).
+        `tabelle` (Schema, Name) wird danach geöffnet, `nach` danach aufgerufen."""
         cfg = {k: v for k, v in self.cfg.items() if not k.startswith("_")}
         cfg["datenbank"] = name
+        self._danach_tabelle = tabelle
+        self._danach = nach
         self.verbinden(cfg)
+
+    def nebenverbindung(self, db: str):
+        """Zweite Verbindung zum selben Server für eine andere Datenbank (nur zum Anzeigen im Baum)."""
+        offen = self._neben.get(db)
+        if offen is not None:
+            return offen
+        cfg = {k: v for k, v in self.cfg.items() if not k.startswith("_")}
+        cfg["datenbank"] = db
+        pw = verbindungen.passwort(self.cfg) or verbindungen.passwort_gleiches_konto(self.cfg)
+        t = treiber.oeffne(cfg, pw)
+        self._neben[db] = t
+        return t
+
+    def nebenverbindungen_schliessen(self):
+        for t in self._neben.values():
+            try:
+                t.schliessen()
+            except Exception:
+                pass
+        self._neben = {}
 
     def oeffne_von_aussen(self, werte: dict, tabelle: str | None = None) -> dict | None:
         """Start mit --verbindung (z. B. aus Visual Death Studio): Verbindung übernehmen bzw. wiederfinden, fehlt das
@@ -232,6 +264,7 @@ class Hauptfenster(QMainWindow):
         meldung(self, "Verbindung fehlgeschlagen", fehler, True)
 
     def trennen(self):
+        self.nebenverbindungen_schliessen()
         if self.t:
             self.t.schliessen()
         self.t, self.cfg = None, {}

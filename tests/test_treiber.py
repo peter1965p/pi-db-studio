@@ -132,3 +132,31 @@ def test_postgres_listet_datenbanken_des_servers(db):
         return
     alle = db.datenbanken()
     assert db.aktuelle_datenbank() in alle and "template0" not in alle
+
+
+def test_postgres_datenbank_anlegen_umbenennen_loeschen(db):
+    if db.art != "postgresql":
+        return
+    if not db.server_rechte()["createdb"]:
+        pytest.skip("Testrolle darf keine Datenbanken anlegen")
+    import os
+    name = "t_db_" + os.urandom(3).hex()
+    try:
+        db.datenbank_anlegen(name)
+        assert name in db.datenbanken()
+        info = db.datenbank_info(name)
+        assert info["verbindungen"] == 0 and info["bytes"] > 0 and info["kodierung"] == "UTF8"
+        db.datenbank_umbenennen(name, name + "_x")
+        name += "_x"
+        assert name in db.datenbanken()
+        with pytest.raises(treiber.DBFehler):
+            db.datenbank_anlegen("1falsch; DROP")
+        db.schreibschutz = True
+        with pytest.raises(treiber.DBFehler):
+            db.datenbank_loeschen(name)
+        db.schreibschutz = False
+    finally:
+        db.schreibschutz = False
+        if name in db.datenbanken():
+            db.datenbank_loeschen(name)
+    assert name not in db.datenbanken()

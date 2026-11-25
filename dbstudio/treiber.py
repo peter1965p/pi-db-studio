@@ -204,6 +204,10 @@ class Treiber:
     def version(self) -> str:
         return ""
 
+    def _pruefe_schreiben(self) -> None:
+        if self.schreibschutz:
+            raise DBFehler("Die Verbindung ist schreibgeschützt.")
+
     def datenbanken(self) -> list[str]:
         """Datenbanken auf demselben Server, zu denen diese Anmeldung darf (leer: Umschalten nicht möglich)."""
         return []
@@ -544,6 +548,53 @@ class PostgreSQL(Treiber):
 
     def aktuelle_datenbank(self):
         return self.abfrage("SELECT current_database()").zeilen[0][0]
+
+    # --- Server: Datenbanken verwalten (CREATE/ALTER/DROP DATABASE laufen außerhalb einer Transaktion: autocommit)
+    def server_rechte(self) -> dict:
+        r = self.abfrage("SELECT rolsuper, rolcreatedb, current_user FROM pg_roles WHERE rolname = current_user").zeilen[0]
+        return {"superuser": bool(r[0]), "createdb": bool(r[0] or r[1]), "benutzer": r[2]}
+
+    def datenbank_info(self, name: str) -> dict:
+        z = self.abfrage(
+            "SELECT pg_get_userbyid(d.datdba), pg_encoding_to_char(d.encoding), d.datcollate, "
+            "pg_size_pretty(pg_database_size(d.datname)), pg_database_size(d.datname), "
+            "(SELECT count(*) FROM pg_stat_activity a WHERE a.datname = d.datname AND a.pid <> pg_backend_pid()) "
+            "FROM pg_database d WHERE d.datname = %s", (name,)).zeilen
+        if not z:
+            raise DBFehler(f"Datenbank {name} gibt es nicht.")
+        b, enc, coll, groesse, bytes_, verb = z[0]
+        return {"name": name, "besitzer": b, "kodierung": enc, "sortierung": coll, "groesse": groesse,
+                "bytes": int(bytes_), "verbindungen": int(verb)}
+
+    def rollen(self) -> list[str]:
+        return [r[0] for r in self.abfrage("SELECT rolname FROM pg_roles WHERE rolname !~ '^pg_' ORDER BY 1").zeilen]
+
+    @staticmethod
+    def _db_name(name: str) -> str:
+        name = (name or "").strip()
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_$-]{0,62}", name):
+            raise DBFehler("Name: Buchstaben, Ziffern, _ $ -, höchstens 63 Zeichen, nicht mit einer Ziffer beginnen.")
+        return name
+
+    def datenbank_anlegen(self, name: str, besitzer: str = "") -> str:
+        self._pruefe_schreiben()
+        name = self._db_name(name)
+        sql = f"CREATE DATABASE {self.zitiere(name)}" + (f" OWNER {self.zitiere(besitzer)}" if besitzer else "") + \
+            " ENCODING 'UTF8' TEMPLATE template0"
+        self.abfrage(sql)
+        return sql
+
+    def datenbank_umbenennen(self, alt: str, neu: str) -> str:
+        self._pruefe_schreiben()
+        sql = f"ALTER DATABASE {self.zitiere(alt)} RENAME TO {self.zitiere(self._db_name(neu))}"
+        self.abfrage(sql)
+        return sql
+
+    def datenbank_loeschen(self, name: str, erzwingen: bool = False) -> str:
+        self._pruefe_schreiben()
+        sql = f"DROP DATABASE {self.zitiere(name)}" + (" WITH (FORCE)" if erzwingen else "")
+        self.abfrage(sql)
+        return sql
 
     def schemas(self):
         return [r[0] for r in self.abfrage(

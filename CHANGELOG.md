@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.6 – 2026-11-25
+
+- **Serverbaum (PostgreSQL):** Oben der Server, darunter alle Datenbanken, auf die die Anmeldung darf; die aktuelle
+  ist aufgeklappt, jede andere lässt sich aufklappen (Schemas, Tabellen, Views …). Doppelklick auf eine Tabelle einer
+  anderen Datenbank wechselt dorthin und öffnet sie. Ersetzt den Umschalter aus 0.4.5.
+- **Datenbanken verwalten:** „＋ Datenbank“ (mit Besitzer), Rechtsklick: Umbenennen, Löschen, Eigenschaften,
+  Hierhin wechseln. Löschen mit Folgen-Analyse (Größe, Tabellen, offene Verbindungen) und Bestätigung durch den Namen.
+  Schreibschutz und Rechte der Rolle werden beachtet; postgres/template* sind geschützt.
+
 ## 0.4.5 – 2026-11-25
 
 - **Datenbank-Umschalter (PostgreSQL):** Über dem Baum im Explorer stehen alle Datenbanken des Servers, auf die die

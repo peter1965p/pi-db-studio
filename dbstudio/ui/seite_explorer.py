@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (QComboBox, QFileDialog, QHeaderView, QLineEdit, QMenu, QSpinBox, QSplitter, QTreeWidget,
+from PySide6.QtWidgets import (QFileDialog, QHeaderView, QLineEdit, QMenu, QSpinBox, QSplitter, QTreeWidget,
                                QTreeWidgetItem, QVBoxLayout, QWidget)
 
 from .. import austausch, verbindungen
@@ -29,11 +29,6 @@ class ExplorerSeite(QWidget):
         links = QWidget()
         lv = QVBoxLayout(links)
         lv.setContentsMargins(0, 0, 0, 0)
-        self.db_wahl = QComboBox()
-        self.db_wahl.setToolTip("Datenbank auf diesem Server – wechselt mit derselben Anmeldung")
-        self.db_wahl.activated.connect(self._datenbank_gewaehlt)
-        self.db_wahl.hide()
-        lv.addWidget(self.db_wahl)
         self.suche = QLineEdit()
         self.suche.setPlaceholderText("Im Baum suchen …")
         self.suche.setClearButtonEnabled(True)
@@ -46,7 +41,10 @@ class ExplorerSeite(QWidget):
         self.baum.customContextMenuRequested.connect(self._kontextmenue)
         lv.addWidget(self.suche)
         lv.addWidget(self.baum, 1)
-        lv.addLayout(zeile(knopf("Aktualisieren", self.neu_laden), dehnen=False))
+        self.k_neue_db = knopf("＋ Datenbank", self.datenbank_neu)
+        self.k_neue_db.setToolTip("Neue Datenbank auf diesem Server. Rechtsklick auf eine Datenbank: umbenennen, löschen, Eigenschaften.")
+        self.k_neue_db.hide()
+        lv.addLayout(zeile(knopf("Aktualisieren", self.neu_laden), self.k_neue_db, dehnen=False))
         rechts = QWidget()
         rv = QVBoxLayout(rechts)
         rv.setContentsMargins(0, 0, 0, 0)
@@ -117,36 +115,53 @@ class ExplorerSeite(QWidget):
 
     def _schemas_da(self, daten):
         zahlen, std, hinweis, objekte, (dbs, aktuell) = daten
-        self.db_wahl.blockSignals(True)
-        self.db_wahl.clear()
-        for d in dbs:
-            self.db_wahl.addItem(f"🗄 {d}", d)
-        self.db_wahl.setCurrentIndex(max(0, self.db_wahl.findData(aktuell)))
-        self.db_wahl.blockSignals(False)
-        self.db_wahl.setVisible(len(dbs) > 1)
         self._laedt_schema = True
         self.h.editor.setze_schemas(list(zahlen))
+        eltern = None
+        try:
+            darf = bool(dbs) and self.h.t.server_rechte()["createdb"] and not self.h.t.schreibschutz
+        except Exception:
+            darf = False
+        self.k_neue_db.setVisible(darf)
+        if dbs:  # PostgreSQL: Server oben, darunter alle Datenbanken, die aktuelle aufgeklappt
+            cfg = self.h.cfg
+            server = QTreeWidgetItem([f"🖥  {cfg.get('host') or 'localhost'}:{cfg.get('port') or 5432}"])
+            server.setData(0, ROLLE, ("server",))
+            server.setToolTip(0, f"{cfg.get('_version', '')} · angemeldet als {cfg.get('benutzer', '')} · Rechtsklick: neue Datenbank")
+            self.baum.addTopLevelItem(server)
+            for d in dbs:
+                di = QTreeWidgetItem([f"🗄  {d}" + ("   ●" if d == aktuell else "")])
+                di.setData(0, ROLLE, ("datenbank", d))
+                server.addChild(di)
+                if d == aktuell:
+                    eltern = di
+                    di.setToolTip(0, "Aktuelle Datenbank")
+                else:
+                    di.addChild(QTreeWidgetItem(["lädt …"]))
+            server.setExpanded(True)
         for s, n in zahlen.items():
             item = QTreeWidgetItem([f"{s}  ({n})"])
             item.setData(0, ROLLE, ("schema", s))
             item.setToolTip(0, f"{s}: {n} Tabelle{'n' if n != 1 else ''}")
             item.addChild(QTreeWidgetItem(["lädt …"]))
-            self.baum.addTopLevelItem(item)
+            if eltern is not None:
+                eltern.addChild(item)
+            else:
+                self.baum.addTopLevelItem(item)
             if s == std:
                 self._objekte_da(item, objekte)
                 item.setExpanded(True)
                 self.baum.setCurrentItem(item)
+        if eltern is not None:
+            eltern.setExpanded(True)
         self._laedt_schema = False
         self.status.setText(hinweis)
         self.h.schema_gewaehlt(std, objekte, merken=False)
 
-    def _datenbank_gewaehlt(self, _i=None):
-        name = self.db_wahl.currentData()
-        if name and self.h.t and name != self.h.cfg.get("datenbank"):
-            self.h.datenbank_wechseln(name)
-
     def _aufgeklappt(self, item):
         art = item.data(0, ROLLE)
+        if art and art[0] in ("datenbank", "fschema") and not getattr(self, "_laedt_schema", False):
+            return self._fremd_aufgeklappt(item, art)
         if not art or art[0] != "schema" or getattr(self, "_laedt_schema", False):
             return
         t, s = self.h.t, art[1]
@@ -157,6 +172,47 @@ class ExplorerSeite(QWidget):
                 self._objekte_da(item, o)
             self.h.schema_gewaehlt(s, o)
         arbeiter.starte(lambda: t.objekte(s), da, lambda f: self.status.setText(f"Fehler: {f}"))
+
+    # --- Andere Datenbanken desselben Servers (nur lesen; Öffnen wechselt die Verbindung) -----------------------------
+    def _fremd_aufgeklappt(self, item, art):
+        if not (item.childCount() == 1 and not item.child(0).data(0, ROLLE)):
+            return  # schon geladen
+        db = art[1]
+        if art[0] == "datenbank":
+            def lauf():
+                t = self.h.nebenverbindung(db)
+                return t.tabellen_zahlen()
+
+            def da(zahlen):
+                item.takeChildren()
+                for s_, n in zahlen.items():
+                    c = QTreeWidgetItem([f"{s_}  ({n})"])
+                    c.setData(0, ROLLE, ("fschema", db, s_))
+                    c.addChild(QTreeWidgetItem(["lädt …"]))
+                    item.addChild(c)
+                if not zahlen:
+                    item.addChild(QTreeWidgetItem(["(leer)"]))
+        else:
+            s_ = art[2]
+
+            def lauf():
+                return self.h.nebenverbindung(db).objekte(s_)
+
+            def da(objekte):
+                item.takeChildren()
+                for schluessel, name in GRUPPEN:
+                    namen = objekte.get(schluessel, [])
+                    g = QTreeWidgetItem([f"{name}  ({len(namen)})"])
+                    g.setData(0, ROLLE, ("fgruppe", db, s_, schluessel))
+                    for n in namen:
+                        c = QTreeWidgetItem([n])
+                        c.setData(0, ROLLE, ("f" + schluessel, db, s_, n))
+                        g.addChild(c)
+                    item.addChild(g)
+                    if schluessel == "tabellen":
+                        g.setExpanded(True)
+                self._filtern(self.suche.text())
+        arbeiter.starte(lauf, da, lambda f: (item.takeChildren(), item.addChild(QTreeWidgetItem([f"Fehler: {f}"]))))
 
     def _objekte_da(self, item, objekte):
         item.takeChildren()
@@ -175,11 +231,17 @@ class ExplorerSeite(QWidget):
         self._filtern(self.suche.text())
 
     def _filtern(self, text):
+        """Filtert die Objekte in allen Gruppen (auch unter Server/Datenbank), Gruppen mit Treffern klappen auf."""
         text = text.lower().strip()
+
+        def gruppen(item):
+            art = item.data(0, ROLLE)
+            if art and art[0] in ("gruppe", "fgruppe"):
+                yield item
+            for j in range(item.childCount()):
+                yield from gruppen(item.child(j))
         for i in range(self.baum.topLevelItemCount()):
-            schema = self.baum.topLevelItem(i)
-            for j in range(schema.childCount()):
-                gruppe = schema.child(j)
+            for gruppe in gruppen(self.baum.topLevelItem(i)):
                 sichtbar = 0
                 for k in range(gruppe.childCount()):
                     c = gruppe.child(k)
@@ -193,10 +255,21 @@ class ExplorerSeite(QWidget):
         art = item.data(0, ROLLE)
         if art and art[0] in ("tabellen", "views"):
             self.oeffnen(art[1], art[2])
+        elif art and art[0] in ("ftabellen", "fviews"):
+            self.h.datenbank_wechseln(art[1], (art[2], art[3]))
+        elif art and art[0] == "datenbank" and item.childCount() and not item.text(0).endswith("●"):
+            pass  # Aufklappen genügt; Wechseln per Kontextmenü
 
     def _kontextmenue(self, punkt):
         item = self.baum.itemAt(punkt)
         art = item.data(0, ROLLE) if item else None
+        if art and art[0] in ("server", "datenbank"):
+            return self._server_menue(art, punkt)
+        if art and art[0] in ("ftabellen", "fviews"):
+            m = QMenu(self)
+            m.addAction("Öffnen (wechselt in diese Datenbank)", lambda: self.h.datenbank_wechseln(art[1], (art[2], art[3])))
+            m.exec(self.baum.viewport().mapToGlobal(punkt))
+            return
         if not art or art[0] not in ("tabellen", "views"):
             return
         m = QMenu(self)
@@ -206,6 +279,109 @@ class ExplorerSeite(QWidget):
             else f"SELECT TOP 100 * FROM {self.h.t.voll(art[1], art[2])};"))
         m.addAction("In andere Verbindung kopieren …", lambda: self.h.austausch.kopieren_vorbelegen(art[1], art[2]))
         m.exec(self.baum.viewport().mapToGlobal(punkt))
+
+    # --- Server: Datenbanken anlegen, umbenennen, löschen ----------------------------------------------------------
+    def _server_menue(self, art, punkt):
+        t = self.h.t
+        try:
+            rechte = t.server_rechte()
+        except Exception:
+            rechte = {"createdb": False, "superuser": False}
+        m = QMenu(self)
+        a = m.addAction("＋ Neue Datenbank …", self.datenbank_neu)
+        a.setEnabled(rechte["createdb"] and not t.schreibschutz)
+        if art[0] == "datenbank":
+            db = art[1]
+            m.addSeparator()
+            if db != self.h.cfg.get("datenbank"):
+                m.addAction("Hierhin wechseln", lambda: self.h.datenbank_wechseln(db))
+            m.addAction("Eigenschaften …", lambda: self.datenbank_eigenschaften(db))
+            for text, f in (("Umbenennen …", lambda: self.datenbank_umbenennen(db)), ("🗑 Löschen …", lambda: self.datenbank_loeschen(db))):
+                a = m.addAction(text, f)
+                a.setEnabled(rechte["createdb"] and not t.schreibschutz and db not in ("postgres", "template0", "template1"))
+        m.addSeparator()
+        m.addAction("Aktualisieren", self.neu_laden)
+        m.exec(self.baum.viewport().mapToGlobal(punkt))
+
+    def datenbank_neu(self):
+        from PySide6.QtWidgets import QInputDialog
+        t = self.h.t
+        name, ok = QInputDialog.getText(self, "Neue Datenbank", "Name der Datenbank:")
+        if not ok or not name.strip():
+            return
+        try:
+            rollen = t.rollen()
+        except Exception:
+            rollen = []
+        besitzer, ok = QInputDialog.getItem(self, "Neue Datenbank", f"Besitzer von „{name.strip()}“:",
+                                            [self.h.cfg.get("benutzer", "")] + [r for r in rollen if r != self.h.cfg.get("benutzer")], 0, False)
+        if not ok:
+            return
+        arbeiter.starte(lambda: t.datenbank_anlegen(name, besitzer if besitzer != self.h.cfg.get("benutzer") else ""),
+                        lambda sql: (self.status.setText(f"Angelegt: {sql}"), self.neu_laden()),
+                        lambda f: meldung(self, "Neue Datenbank", f, True))
+
+    def datenbank_eigenschaften(self, db):
+        t = self.h.t
+
+        def da(i):
+            meldung(self, f"Datenbank {db}", f"Besitzer: {i['besitzer']}\nGröße: {i['groesse']}\nKodierung: {i['kodierung']}\n"
+                                             f"Sortierung: {i['sortierung']}\nAndere offene Verbindungen: {i['verbindungen']}")
+        arbeiter.starte(lambda: t.datenbank_info(db), da, lambda f: meldung(self, "Eigenschaften", f, True))
+
+    def _ausweichen(self, db, weiter):
+        """Die eigene Datenbank lässt sich nicht umbenennen oder löschen: vorher nach „postgres“ wechseln."""
+        if db == self.h.cfg.get("datenbank"):
+            self.h.datenbank_wechseln("postgres", nach=weiter)
+        else:
+            weiter()
+
+    def datenbank_umbenennen(self, db):
+        from PySide6.QtWidgets import QInputDialog
+        neu, ok = QInputDialog.getText(self, "Datenbank umbenennen", f"Neuer Name für „{db}“:", text=db)
+        if not ok or not neu.strip() or neu.strip() == db:
+            return
+
+        def los():
+            arbeiter.starte(lambda: self.h.t.datenbank_umbenennen(db, neu),
+                            lambda sql: (self.status.setText(f"Umbenannt: {sql}"), self.neu_laden()),
+                            lambda f: meldung(self, "Umbenennen", f + "\n\nHinweis: Umbenennen geht nur, wenn niemand mit der "
+                                                                     "Datenbank verbunden ist.", True))
+        self.h.nebenverbindungen_schliessen()
+        self._ausweichen(db, los)
+
+    def datenbank_loeschen(self, db):
+        """Folgen-Analyse vor dem Löschen: Größe, Tabellen, offene Verbindungen; Bestätigung durch Eintippen des Namens."""
+        from PySide6.QtWidgets import QInputDialog
+
+        def lauf():
+            info = self.h.t.datenbank_info(db)
+            try:
+                info["tabellen"] = sum(self.h.nebenverbindung(db).tabellen_zahlen().values())
+            except Exception:
+                info["tabellen"] = None
+            return info
+
+        def da(i):
+            tab = "unbekannt" if i["tabellen"] is None else str(i["tabellen"])
+            text = (f"Das löscht die Datenbank „{db}“ endgültig, mit allem darin:\n\n"
+                    f"• Größe: {i['groesse']}\n• Tabellen: {tab}\n• Besitzer: {i['besitzer']}\n"
+                    f"• Andere offene Verbindungen: {i['verbindungen']}" +
+                    ("  – die werden getrennt" if i["verbindungen"] else "") +
+                    "\n\nZum Bestätigen den Namen eintippen:")
+            antwort, ok = QInputDialog.getText(self, "Datenbank löschen", text)
+            if not ok:
+                return
+            if antwort.strip() != db:
+                return meldung(self, "Datenbank löschen", "Name stimmt nicht überein – nichts gelöscht.", True)
+            self.h.nebenverbindungen_schliessen()
+
+            def los():
+                arbeiter.starte(lambda: self.h.t.datenbank_loeschen(db, erzwingen=bool(i["verbindungen"])),
+                                lambda sql: (self.status.setText(f"Gelöscht: {sql}"), self.neu_laden()),
+                                lambda f: meldung(self, "Datenbank löschen", f, True))
+            self._ausweichen(db, los)
+        arbeiter.starte(lauf, da, lambda f: meldung(self, "Datenbank löschen", f, True))
 
     # --- Datenraster ---------------------------------------------------------------------------------------------
     def oeffnen(self, schema, tabelle):
