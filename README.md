@@ -24,12 +24,22 @@ PostgreSQL · MySQL/MariaDB · SQL Server · SQLite · DuckDB · Microsoft Acces
 
 ## Installation
 
-<div align="center">
-
-[![Windows – Setup](https://img.shields.io/badge/Windows-Setup.exe%20herunterladen-4c8dff?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/peter1965p/pi-db-studio/releases/latest/download/PiDBStudio-Windows-Setup.exe)
-[![Linux – AppImage](https://img.shields.io/badge/Linux-AppImage%20herunterladen-f5a623?style=for-the-badge&logo=linux&logoColor=white)](https://github.com/peter1965p/pi-db-studio/releases/latest/download/PiDBStudio-Linux-x86_64.AppImage)
-
-</div>
+<table align="center">
+<tr>
+<td align="center" width="260">
+<img src="docs/img/tux.svg" alt="Tux, der Linux-Pinguin" height="88"><br>
+<b>Linux</b><br>
+<sub>Ubuntu · Debian · Fedora · Arch · openSUSE · Mint …</sub><br><br>
+<a href="https://github.com/peter1965p/pi-db-studio/releases/latest/download/PiDBStudio-Linux-x86_64.AppImage"><img src="https://img.shields.io/badge/AppImage-herunterladen-f5a623?style=for-the-badge" alt="AppImage herunterladen"></a>
+</td>
+<td align="center" width="260">
+<img src="docs/img/fenster.svg" alt="Fenster mit Gardinen" height="88"><br>
+<b>Windows</b><br>
+<sub>Windows 10 und 11</sub><br><br>
+<a href="https://github.com/peter1965p/pi-db-studio/releases/latest/download/PiDBStudio-Windows-Setup.exe"><img src="https://img.shields.io/badge/Setup.exe-herunterladen-4c8dff?style=for-the-badge" alt="Setup.exe herunterladen"></a>
+</td>
+</tr>
+</table>
 
 Python muss nicht installiert sein. Alle Dateien jeder Version: **[Releases](https://github.com/peter1965p/pi-db-studio/releases)**.
 
@@ -182,6 +192,8 @@ SQLite, DuckDB und die Oberfläche laufen immer. PostgreSQL-, MySQL/MariaDB- und
 ## Über das Projekt
 
 Architektur und Konzept: **Peter Päffgen, Päffgen IT** – Datenbankentwicklung seit den Tagen von MS Access. Den Code schreibt die KI nach meinen Vorgaben. So entsteht heute Software.
+
+Tux: Larry Ewing, erstellt mit The GIMP. Windows ist eine Marke von Microsoft; das Fenster ist eine eigene Zeichnung.
 
 Die Access-Demo `dbstudio/demo/northwind.mdb` stammt aus den Testdaten des mdbtools-Projekts; Northwind selbst stellt Microsoft in `microsoft/sql-server-samples` unter MIT-Lizenz bereit.
 
