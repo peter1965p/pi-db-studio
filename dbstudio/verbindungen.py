@@ -14,7 +14,12 @@ FARBEN = {"": "keine", "#e05252": "rot (produktiv)", "#f5a623": "orange (Test)",
 
 
 def ordner() -> Path:
-    basis = Path(os.environ.get("DB_STUDIO_CONFIG") or (Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "db-studio"))
+    if os.environ.get("DB_STUDIO_CONFIG"):
+        basis = Path(os.environ["DB_STUDIO_CONFIG"])
+    elif os.name == "nt":  # Windows: %APPDATA%\db-studio
+        basis = Path(os.environ.get("APPDATA") or Path.home() / "AppData" / "Roaming") / "db-studio"
+    else:
+        basis = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "db-studio"
     basis.mkdir(parents=True, exist_ok=True)
     try:
         basis.chmod(0o700)

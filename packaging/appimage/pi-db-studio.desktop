@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Pi DB Studio
+GenericName=Datenbank-Werkzeug
+Comment=PostgreSQL, MySQL/MariaDB, SQL Server, SQLite und DuckDB mit KI-Assistent
+Exec=PiDBStudio %F
+Icon=pi-db-studio
+Categories=Development;Database;
+Terminal=false
+StartupWMClass=db-studio

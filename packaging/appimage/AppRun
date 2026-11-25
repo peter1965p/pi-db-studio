@@ -1,0 +1,4 @@
+#!/bin/sh
+# Start der AppImage: das PyInstaller-Paket liegt unter usr/lib/PiDBStudio
+HIER="$(dirname "$(readlink -f "$0")")"
+exec "$HIER/usr/lib/PiDBStudio/PiDBStudio" "$@"
